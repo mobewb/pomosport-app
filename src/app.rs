@@ -57,6 +57,8 @@ pub struct Config {
     pub work: Duration,
     pub short: Duration,
     pub long: Duration,
+    /// Work sessions per cycle; the break after the last one is long.
+    pub cycles: u32,
 }
 
 impl Default for Config {
@@ -65,6 +67,7 @@ impl Default for Config {
             work: Duration::from_secs(25 * 60),
             short: Duration::from_secs(5 * 60),
             long: Duration::from_secs(15 * 60),
+            cycles: 4,
         }
     }
 }
@@ -102,6 +105,23 @@ impl App {
             landed_event: false,
             rng: StdRng::seed_from_u64(seed),
         }
+    }
+
+    /// Sessions filled in the current cycle (a full cycle stays full until the
+    /// next work session starts).
+    pub fn cycle_progress(&self) -> u32 {
+        let n = self.completed % self.cfg.cycles;
+        if n == 0 && self.completed > 0 && self.phase != Phase::Work {
+            self.cfg.cycles
+        } else {
+            n
+        }
+    }
+
+    /// Whether the next break will be the long one.
+    pub fn next_break_long(&self) -> bool {
+        let sessions = self.completed + u32::from(self.phase == Phase::Work);
+        sessions.is_multiple_of(self.cfg.cycles)
     }
 
     /// Total length of the current timed phase (0 during the wheel).
@@ -142,7 +162,7 @@ impl App {
     }
 
     fn start_break(&mut self) {
-        let long = self.completed > 0 && self.completed.is_multiple_of(4);
+        let long = self.completed > 0 && self.completed.is_multiple_of(self.cfg.cycles);
         self.phase = Phase::Break { long };
         self.remaining = if long { self.cfg.long } else { self.cfg.short };
         self.running = true;
@@ -221,11 +241,21 @@ mod tests {
         ended
     }
 
+    fn tcfg() -> Config {
+        Config {
+            work: S,
+            short: S,
+            long: S,
+            ..Config::default()
+        }
+    }
+
     fn app() -> App {
         App::new(Config {
             work: 10 * S,
             short: 3 * S,
             long: 6 * S,
+            ..Config::default()
         })
     }
 
@@ -253,6 +283,24 @@ mod tests {
             assert_eq!(a.phase, Phase::Break { long: i == 4 });
             adv(&mut a, 10 * S);
             assert_eq!(a.phase, Phase::Work);
+        }
+    }
+
+    #[test]
+    fn cycles_option_sets_long_break_frequency() {
+        let mut a = App::new(Config {
+            cycles: 2,
+            ..tcfg()
+        });
+        assert!(!a.next_break_long());
+        for i in 1..=4 {
+            a.toggle();
+            adv(&mut a, S);
+            assert_eq!(a.cycle_progress(), if i % 2 == 0 { 2 } else { 1 });
+            adv(&mut a, 60 * S);
+            a.enter();
+            assert_eq!(a.phase, Phase::Break { long: i % 2 == 0 });
+            adv(&mut a, 2 * S);
         }
     }
 
@@ -322,14 +370,7 @@ mod tests {
     #[test]
     fn wheel_lands_on_valid_index_and_stops() {
         for seed in 0..50 {
-            let mut a = App::with_seed(
-                Config {
-                    work: S,
-                    short: S,
-                    long: S,
-                },
-                seed,
-            );
+            let mut a = App::with_seed(tcfg(), seed);
             a.toggle();
             a.tick(S);
             assert!(a.result().is_none());
@@ -348,14 +389,7 @@ mod tests {
     #[test]
     fn clacks_equal_highlight_steps() {
         for (seed, step_ms) in [(1, 10), (2, 50), (3, 333)] {
-            let mut a = App::with_seed(
-                Config {
-                    work: S,
-                    short: S,
-                    long: S,
-                },
-                seed,
-            );
+            let mut a = App::with_seed(tcfg(), seed);
             a.toggle();
             a.tick(S);
             let start = a.wheel.as_ref().unwrap().pos;
@@ -380,14 +414,7 @@ mod tests {
     }
 
     fn spun_app(seed: u64) -> App {
-        let mut a = App::with_seed(
-            Config {
-                work: S,
-                short: S,
-                long: S,
-            },
-            seed,
-        );
+        let mut a = App::with_seed(tcfg(), seed);
         a.toggle();
         a.tick(S);
         a

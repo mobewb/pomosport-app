@@ -65,14 +65,25 @@ pub fn draw(f: &mut Frame, app: &App) {
         gauge,
     );
 
-    let state = if app.phase != Phase::Wheel && !app.running {
-        " (paused)"
+    let done = app.cycle_progress() as usize;
+    let dots: String = (0..app.cfg.cycles as usize)
+        .map(|i| if i < done { '●' } else { '○' })
+        .collect();
+    let next = if matches!(app.phase, Phase::Break { .. }) {
+        String::new()
     } else {
-        ""
+        format!(
+            "  next: {} break",
+            if app.next_break_long() {
+                "long"
+            } else {
+                "short"
+            }
+        )
     };
     f.render_widget(
         center(
-            format!("Sessions completed: {}{state}", app.completed),
+            format!("{dots}  sessions: {}{next}", app.completed),
             Style::default(),
         ),
         count,

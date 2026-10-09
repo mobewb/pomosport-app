@@ -30,6 +30,9 @@ struct Cli {
     /// Long break length in minutes
     #[arg(long, value_parser = parse_minutes, default_value_t = 15.0)]
     long: f64,
+    /// Work sessions before a long break
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..=99), default_value_t = 4)]
+    cycles: u32,
     /// Disable all sounds (clacks, fanfare, bell)
     #[arg(long)]
     mute: bool,
@@ -166,6 +169,7 @@ fn main() -> io::Result<()> {
         work: minutes(cli.work),
         short: minutes(cli.short),
         long: minutes(cli.long),
+        cycles: cli.cycles,
     });
 
     let default_hook = std::panic::take_hook();
