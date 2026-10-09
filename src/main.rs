@@ -35,6 +35,7 @@ fn minutes(m: f64) -> Duration {
 }
 
 const ICON: &[u8] = include_bytes!("../assets/icon.png");
+const WIN_SOUND: &[u8] = include_bytes!("../assets/win.wav");
 const MESSAGE: &str = "Time for an exercise!";
 
 /// Write the embedded icon to the temp dir so terminal-notifier can read it.
@@ -91,11 +92,16 @@ fn clack(playing: &mut Vec<Child>, steps: u32) {
     }
 }
 
-/// Win jingle when the wheel lands. Fire and forget; it plays alongside any
-/// clack still ringing. To mute, make this function return early.
+/// Victory fanfare when the wheel lands, written to the temp dir for afplay.
+/// Fire and forget; it plays alongside any clack still ringing.
+/// To mute, make this function return early.
 fn win() {
+    let path = std::env::temp_dir().join("pomosport-win.wav");
+    if std::fs::write(&path, WIN_SOUND).is_err() {
+        return;
+    }
     let _ = Command::new("afplay")
-        .arg("/System/Library/Sounds/Hero.aiff")
+        .arg(path)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn();
