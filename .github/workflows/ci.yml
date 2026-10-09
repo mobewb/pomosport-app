@@ -15,6 +15,5 @@ jobs:
       - uses: jdx/mise-action@v2
       - uses: Swatinem/rust-cache@v2
       - run: rustup component add rustfmt clippy
-      - run: cargo fmt --check
-      - run: cargo clippy --all-targets -- -D warnings
+      - run: prek run --all-files
       - run: cargo test
