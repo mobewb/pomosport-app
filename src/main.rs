@@ -127,6 +127,15 @@ fn restore() {
     let _ = io::stdout().execute(LeaveAlternateScreen);
 }
 
+/// Restores the terminal on drop, so an early `?` return can't leave raw mode on.
+struct TermGuard;
+
+impl Drop for TermGuard {
+    fn drop(&mut self) {
+        restore();
+    }
+}
+
 fn main() -> io::Result<()> {
     let cli = Cli::parse();
     let mut app = App::new(Config {
@@ -142,11 +151,10 @@ fn main() -> io::Result<()> {
     }));
 
     enable_raw_mode()?;
+    let _guard = TermGuard;
     execute!(io::stdout(), EnterAlternateScreen)?;
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
-    let result = run(&mut terminal, &mut app);
-    restore();
-    result
+    run(&mut terminal, &mut app)
 }
 
 fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> io::Result<()> {
