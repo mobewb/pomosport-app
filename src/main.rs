@@ -1,7 +1,8 @@
 mod app;
 mod ui;
 
-use std::io;
+use std::io::{self, Write};
+use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use clap::Parser;
@@ -31,6 +32,20 @@ struct Cli {
 
 fn minutes(m: f64) -> Duration {
     Duration::from_secs_f64((m * 60.0).max(0.0))
+}
+
+/// Terminal bell plus a macOS notification; failures are ignored.
+fn notify() {
+    let _ = io::stdout().write_all(b"\x07");
+    let _ = io::stdout().flush();
+    let _ = Command::new("osascript")
+        .args([
+            "-e",
+            "display notification \"Time for an exercise!\" with title \"pomosport\"",
+        ])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
 }
 
 fn restore() {
@@ -79,7 +94,9 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> 
             }
         }
         let now = Instant::now();
-        app.tick(now - last);
+        if app.tick(now - last) {
+            notify();
+        }
         last = now;
     }
     Ok(())

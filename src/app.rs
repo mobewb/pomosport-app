@@ -131,20 +131,23 @@ impl App {
             .map(|w| EXERCISES[w.pos])
     }
 
-    pub fn tick(&mut self, dt: Duration) {
+    /// Advance time; returns true when a work session just ended on its own.
+    pub fn tick(&mut self, dt: Duration) -> bool {
         if let Some(w) = self.wheel.as_mut() {
             w.advance(dt);
         }
         if !self.running || self.phase == Phase::Wheel {
-            return;
+            return false;
         }
         self.remaining = self.remaining.saturating_sub(dt);
         if self.remaining.is_zero() {
-            match self.phase {
-                Phase::Work => self.finish_work(),
-                _ => self.start_work(),
+            if self.phase == Phase::Work {
+                self.finish_work();
+                return true;
             }
+            self.start_work();
         }
+        false
     }
 
     fn finish_work(&mut self) {
@@ -211,6 +214,17 @@ mod tests {
         assert_eq!(a.remaining, 6 * S);
         a.tick(6 * S);
         assert_eq!(a.phase, Phase::Wheel);
+    }
+
+    #[test]
+    fn tick_reports_work_end_only() {
+        let mut a = app();
+        a.toggle();
+        assert!(!a.tick(4 * S));
+        assert!(a.tick(6 * S));
+        a.tick(60 * S);
+        a.enter();
+        assert!(!a.tick(10 * S));
     }
 
     #[test]
