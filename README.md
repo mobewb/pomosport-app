@@ -10,7 +10,7 @@ Keys: Space start/pause, s skip, r reset, Enter continue, q/Esc quit.
 
 ## Setup
 
-`mise.toml` pins the Rust toolchain; run `mise install` in the repo root.
+`mise.toml` pins the Rust toolchain; run `mise install` in the repo root. CI (`.github/workflows/ci.yml`, macOS) uses the same pin and runs fmt, clippy and tests.
 
 ## Notifications
 
