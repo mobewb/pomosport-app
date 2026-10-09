@@ -114,7 +114,8 @@ impl App {
 
     pub fn skip(&mut self) {
         match self.phase {
-            Phase::Work => self.finish_work(),
+            // A skipped session earns no exercise and does not count.
+            Phase::Work => self.start_break(),
             Phase::Wheel => self.enter(),
             Phase::Break { .. } => self.start_work(),
         }
@@ -123,12 +124,16 @@ impl App {
     /// Continue from the wheel to the break.
     pub fn enter(&mut self) {
         if self.phase == Phase::Wheel && self.wheel.as_ref().is_some_and(|w| w.landed) {
-            let long = self.completed.is_multiple_of(4);
-            self.phase = Phase::Break { long };
-            self.remaining = if long { self.cfg.long } else { self.cfg.short };
-            self.running = true;
-            self.wheel = None;
+            self.start_break();
         }
+    }
+
+    fn start_break(&mut self) {
+        let long = self.completed > 0 && self.completed.is_multiple_of(4);
+        self.phase = Phase::Break { long };
+        self.remaining = if long { self.cfg.long } else { self.cfg.short };
+        self.running = true;
+        self.wheel = None;
     }
 
     pub fn take_clacks(&mut self) -> u32 {
@@ -244,6 +249,16 @@ mod tests {
         a.tick(60 * S);
         a.enter();
         assert!(!a.tick(10 * S));
+    }
+
+    #[test]
+    fn skipping_work_does_not_count_or_spin_wheel() {
+        let mut a = app();
+        a.skip();
+        assert_eq!(a.phase, Phase::Break { long: false });
+        assert_eq!(a.completed, 0);
+        assert!(a.wheel.is_none());
+        assert!(a.running);
     }
 
     #[test]
