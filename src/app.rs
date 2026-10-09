@@ -314,6 +314,27 @@ mod tests {
     }
 
     #[test]
+    fn one_tick_can_yield_several_clacks() {
+        let mut a = spun_app(5);
+        a.tick(Duration::from_millis(300));
+        assert!(a.take_clacks() > 1);
+    }
+
+    fn spun_app(seed: u64) -> App {
+        let mut a = App::with_seed(
+            Config {
+                work: S,
+                short: S,
+                long: S,
+            },
+            seed,
+        );
+        a.toggle();
+        a.tick(S);
+        a
+    }
+
+    #[test]
     fn enter_ignored_while_spinning() {
         let mut a = app();
         a.toggle();

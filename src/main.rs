@@ -48,20 +48,24 @@ fn notify() {
         .spawn();
 }
 
-/// Short clack for a wheel divider. Skipped while the previous one still plays.
+const MAX_CLACKS: usize = 8;
+
+/// One short clack per highlight step, overlapping if needed.
+/// Finished players are reaped; at most `MAX_CLACKS` run at once.
 /// To mute, make this function return early.
-fn clack(playing: &mut Option<Child>) {
-    if let Some(c) = playing {
-        if matches!(c.try_wait(), Ok(None)) {
-            return;
+fn clack(playing: &mut Vec<Child>, steps: u32) {
+    playing.retain_mut(|c| matches!(c.try_wait(), Ok(None)));
+    for _ in 0..steps {
+        if playing.len() >= MAX_CLACKS {
+            break;
         }
+        let child = Command::new("afplay")
+            .args(["-t", "0.15", "/System/Library/Sounds/Tink.aiff"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+        playing.extend(child);
     }
-    *playing = Command::new("afplay")
-        .arg("/System/Library/Sounds/Tink.aiff")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok();
 }
 
 fn restore() {
@@ -93,7 +97,7 @@ fn main() -> io::Result<()> {
 
 fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> io::Result<()> {
     let mut last = Instant::now();
-    let mut playing = None;
+    let mut playing = Vec::new();
     while !app.quit {
         terminal.draw(|f| ui::draw(f, app))?;
         if event::poll(Duration::from_millis(50))? {
@@ -115,9 +119,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> 
             notify();
         }
         last = now;
-        if app.take_clacks() > 0 {
-            clack(&mut playing);
-        }
+        clack(&mut playing, app.take_clacks());
     }
     Ok(())
 }
