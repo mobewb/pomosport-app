@@ -30,6 +30,12 @@ struct Cli {
     /// Long break length in minutes
     #[arg(long, default_value_t = 15.0)]
     long: f64,
+    /// Disable all sounds (clacks, fanfare, bell)
+    #[arg(long)]
+    mute: bool,
+    /// Disable desktop notifications
+    #[arg(long)]
+    no_notify: bool,
 }
 
 fn minutes(m: f64) -> Duration {
@@ -53,11 +59,17 @@ fn icon_path() -> Option<&'static PathBuf> {
     PATH.get_or_init(|| write_asset("icon.png", ICON)).as_ref()
 }
 
-/// Terminal bell plus a macOS notification; failures are ignored.
+/// Terminal bell (unless muted) plus a macOS notification (unless disabled);
+/// failures are ignored.
 /// Uses `terminal-notifier` (custom icon) when installed, else `osascript`.
-fn notify() {
-    let _ = io::stdout().write_all(b"\x07");
-    let _ = io::stdout().flush();
+fn notify(mute: bool, no_notify: bool) {
+    if !mute {
+        let _ = io::stdout().write_all(b"\x07");
+        let _ = io::stdout().flush();
+    }
+    if no_notify {
+        return;
+    }
     let mut tn = Command::new("terminal-notifier");
     tn.args(["-title", "pomosport", "-message", MESSAGE]);
     if let Some(icon) = icon_path() {
@@ -84,7 +96,6 @@ const MAX_CLACKS: usize = 8;
 
 /// One short clack per highlight step, overlapping if needed.
 /// Finished players are reaped; at most `MAX_CLACKS` run at once.
-/// To mute, make this function return early.
 fn clack(playing: &mut Vec<Child>, steps: u32) {
     playing.retain_mut(|c| matches!(c.try_wait(), Ok(None)));
     for _ in 0..steps {
@@ -102,7 +113,6 @@ fn clack(playing: &mut Vec<Child>, steps: u32) {
 
 /// Victory fanfare when the wheel lands. Fire and forget; it plays alongside
 /// any clack still ringing, but never overlaps another fanfare.
-/// To mute, make this function return early.
 fn win(playing: &mut Option<Child>) {
     static PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
     if playing
@@ -138,6 +148,7 @@ impl Drop for TermGuard {
 
 fn main() -> io::Result<()> {
     let cli = Cli::parse();
+    let (mute, no_notify) = (cli.mute, cli.no_notify);
     let mut app = App::new(Config {
         work: minutes(cli.work),
         short: minutes(cli.short),
@@ -154,10 +165,15 @@ fn main() -> io::Result<()> {
     let _guard = TermGuard;
     execute!(io::stdout(), EnterAlternateScreen)?;
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
-    run(&mut terminal, &mut app)
+    run(&mut terminal, &mut app, mute, no_notify)
 }
 
-fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> io::Result<()> {
+fn run(
+    terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
+    app: &mut App,
+    mute: bool,
+    no_notify: bool,
+) -> io::Result<()> {
     let mut last = Instant::now();
     let mut playing = Vec::new();
     let mut winning = None;
@@ -182,12 +198,16 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> 
         }
         let now = Instant::now();
         if app.tick(now - last) {
-            notify();
+            notify(mute, no_notify);
         }
         last = now;
-        clack(&mut playing, app.take_clacks());
-        if app.take_wheel_landed() {
-            win(&mut winning);
+        let clacks = app.take_clacks();
+        let landed = app.take_wheel_landed();
+        if !mute {
+            clack(&mut playing, clacks);
+            if landed {
+                win(&mut winning);
+            }
         }
     }
     Ok(())
