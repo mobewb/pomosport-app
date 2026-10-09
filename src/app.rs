@@ -4,58 +4,41 @@ use std::time::Duration;
 
 pub const EXERCISES: [&str; 4] = ["10 push-ups", "20 squats", "10 crunches", "5 burpees"];
 
-pub const SECTOR_DEG: f64 = 360.0 / EXERCISES.len() as f64;
-
-/// Sector under the pointer when the wheel is at `theta` degrees.
-pub fn sector_of(theta: f64) -> usize {
-    ((theta.rem_euclid(360.0) / SECTOR_DEG) as usize).min(EXERCISES.len() - 1)
-}
-
-/// A wheel spinning with an ease-out curve towards a pre-chosen sector.
-/// `theta` only grows; a sector divider passes the pointer each time it
-/// crosses a multiple of `SECTOR_DEG`.
+/// State of the spinning wheel; each step takes longer than the last.
 pub struct Wheel {
-    pub theta: f64,
+    pub pos: usize,
     pub landed: bool,
-    pub target: usize,
-    start: f64,
-    total: f64,
-    duration: Duration,
-    elapsed: Duration,
+    steps_done: u32,
+    steps_total: u32,
+    acc: Duration,
 }
 
 impl Wheel {
     fn new(rng: &mut StdRng) -> Self {
-        let start = rng.gen_range(0.0..360.0);
-        let target = rng.gen_range(0..EXERCISES.len());
-        let end_local = target as f64 * SECTOR_DEG + rng.gen_range(0.15..0.85) * SECTOR_DEG;
-        let turns = f64::from(rng.gen_range(3..=5));
         Self {
-            theta: start,
+            pos: rng.gen_range(0..EXERCISES.len()),
             landed: false,
-            target,
-            start,
-            total: (end_local - start).rem_euclid(360.0) + 360.0 * turns,
-            duration: Duration::from_millis(rng.gen_range(4500..6500)),
-            elapsed: Duration::ZERO,
+            steps_done: 0,
+            steps_total: rng.gen_range(24..40),
+            acc: Duration::ZERO,
         }
     }
 
-    pub fn sector(&self) -> usize {
-        sector_of(self.theta)
-    }
-
-    /// Advance the spin; returns how many dividers passed the pointer.
+    /// Advance the spin; returns how many highlight steps were taken.
     fn advance(&mut self, dt: Duration) -> u32 {
-        if self.landed {
-            return 0;
+        let before = self.steps_done;
+        self.acc += dt;
+        while !self.landed {
+            let interval = Duration::from_millis(40 + 6 * u64::from(self.steps_done));
+            if self.acc < interval {
+                break;
+            }
+            self.acc -= interval;
+            self.pos = (self.pos + 1) % EXERCISES.len();
+            self.steps_done += 1;
+            self.landed = self.steps_done >= self.steps_total;
         }
-        let prev = self.theta;
-        self.elapsed = (self.elapsed + dt).min(self.duration);
-        let left = 1.0 - self.elapsed.as_secs_f64() / self.duration.as_secs_f64();
-        self.theta = self.start + self.total * (1.0 - left.powi(3));
-        self.landed = self.elapsed >= self.duration;
-        ((self.theta / SECTOR_DEG).floor() - (prev / SECTOR_DEG).floor()) as u32
+        self.steps_done - before
     }
 }
 
@@ -82,7 +65,7 @@ pub struct App {
     pub completed: u32,
     pub quit: bool,
     pub wheel: Option<Wheel>,
-    /// Dividers that passed the pointer since the last `take_clacks`.
+    /// Highlight steps since the last `take_clacks`.
     clacks: u32,
     rng: StdRng,
 }
@@ -155,7 +138,7 @@ impl App {
         self.wheel
             .as_ref()
             .filter(|w| w.landed)
-            .map(|w| EXERCISES[w.target])
+            .map(|w| EXERCISES[w.pos])
     }
 
     /// Advance time; returns true when a work session just ended on its own.
@@ -278,85 +261,55 @@ mod tests {
     }
 
     #[test]
-    fn angle_maps_to_sector() {
-        assert_eq!(sector_of(0.0), 0);
-        assert_eq!(sector_of(89.9), 0);
-        assert_eq!(sector_of(90.0), 1);
-        assert_eq!(sector_of(359.0), 3);
-        assert_eq!(sector_of(360.0), 0);
-        assert_eq!(sector_of(450.0), 1);
-        assert_eq!(sector_of(-10.0), 3);
-    }
-
-    fn spun(seed: u64) -> App {
-        let mut a = App::with_seed(
-            Config {
-                work: S,
-                short: S,
-                long: S,
-            },
-            seed,
-        );
-        a.toggle();
-        a.tick(S);
-        a
-    }
-
-    #[test]
-    fn wheel_lands_on_target_sector_and_stops() {
+    fn wheel_lands_on_valid_index_and_stops() {
         for seed in 0..50 {
-            let mut a = spun(seed);
+            let mut a = App::with_seed(
+                Config {
+                    work: S,
+                    short: S,
+                    long: S,
+                },
+                seed,
+            );
+            a.toggle();
+            a.tick(S);
             assert!(a.result().is_none());
-            for _ in 0..200 {
+            for _ in 0..1000 {
                 a.tick(Duration::from_millis(50));
             }
             let w = a.wheel.as_ref().unwrap();
-            assert!(w.landed);
-            assert_eq!(w.sector(), w.target);
-            let theta = w.theta;
+            assert!(w.landed && w.pos < EXERCISES.len());
+            let pos = w.pos;
             a.tick(10 * S);
-            assert_eq!(a.wheel.as_ref().unwrap().theta, theta, "stays put");
-            assert_eq!(
-                a.result(),
-                Some(EXERCISES[a.wheel.as_ref().unwrap().target])
-            );
+            assert_eq!(a.wheel.as_ref().unwrap().pos, pos, "stays put");
+            assert_eq!(a.result(), Some(EXERCISES[pos]));
         }
     }
 
     #[test]
-    fn boundary_crossings_match_expected() {
+    fn clacks_equal_highlight_steps() {
         for (seed, step_ms) in [(1, 10), (2, 50), (3, 333)] {
-            let mut a = spun(seed);
-            let w = a.wheel.as_ref().unwrap();
-            let first = (w.theta / SECTOR_DEG).floor();
+            let mut a = App::with_seed(
+                Config {
+                    work: S,
+                    short: S,
+                    long: S,
+                },
+                seed,
+            );
+            a.toggle();
+            a.tick(S);
+            let start = a.wheel.as_ref().unwrap().pos;
             let mut seen = 0;
-            for _ in 0..(10_000 / step_ms) {
+            for _ in 0..(30_000 / step_ms) {
                 a.tick(Duration::from_millis(step_ms));
                 seen += a.take_clacks();
             }
             let w = a.wheel.as_ref().unwrap();
             assert!(w.landed);
-            assert_eq!(f64::from(seen), (w.theta / SECTOR_DEG).floor() - first);
-            assert!(seen >= 12, "at least 3 full turns of 4 dividers");
+            assert!((24..40).contains(&seen));
+            assert_eq!(w.pos, (start + seen as usize) % EXERCISES.len());
             assert_eq!(a.take_clacks(), 0);
-        }
-    }
-
-    #[test]
-    fn spin_decelerates_and_terminates() {
-        let mut a = spun(7);
-        let dt = Duration::from_millis(50);
-        let mut prev = a.wheel.as_ref().unwrap().theta;
-        let mut last_step = f64::MAX;
-        let mut ticks = 0;
-        while !a.wheel.as_ref().unwrap().landed {
-            a.tick(dt);
-            ticks += 1;
-            let t = a.wheel.as_ref().unwrap().theta;
-            let step = t - prev;
-            assert!(step <= last_step + 1e-9, "never speeds up");
-            (prev, last_step) = (t, step);
-            assert!(ticks <= 140, "lands within 7s");
         }
     }
 
