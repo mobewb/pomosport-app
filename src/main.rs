@@ -2,7 +2,7 @@ mod app;
 mod ui;
 
 use std::io::{self, Write};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use clap::Parser;
@@ -48,6 +48,22 @@ fn notify() {
         .spawn();
 }
 
+/// Short clack for a wheel divider. Skipped while the previous one still plays.
+/// To mute, make this function return early.
+fn clack(playing: &mut Option<Child>) {
+    if let Some(c) = playing {
+        if matches!(c.try_wait(), Ok(None)) {
+            return;
+        }
+    }
+    *playing = Command::new("afplay")
+        .arg("/System/Library/Sounds/Tink.aiff")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok();
+}
+
 fn restore() {
     let _ = disable_raw_mode();
     let _ = io::stdout().execute(LeaveAlternateScreen);
@@ -77,6 +93,7 @@ fn main() -> io::Result<()> {
 
 fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> io::Result<()> {
     let mut last = Instant::now();
+    let mut playing = None;
     while !app.quit {
         terminal.draw(|f| ui::draw(f, app))?;
         if event::poll(Duration::from_millis(50))? {
@@ -98,6 +115,9 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> 
             notify();
         }
         last = now;
+        if app.take_clacks() > 0 {
+            clack(&mut playing);
+        }
     }
     Ok(())
 }

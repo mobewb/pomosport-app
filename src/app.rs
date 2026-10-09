@@ -155,7 +155,7 @@ impl App {
         self.wheel
             .as_ref()
             .filter(|w| w.landed)
-            .map(|w| EXERCISES[w.sector()])
+            .map(|w| EXERCISES[w.target])
     }
 
     /// Advance time; returns true when a work session just ended on its own.
