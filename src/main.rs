@@ -2,7 +2,9 @@ mod app;
 mod ui;
 
 use std::io::{self, Write};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
@@ -38,11 +40,17 @@ const ICON: &[u8] = include_bytes!("../assets/icon.png");
 const WIN_SOUND: &[u8] = include_bytes!("../assets/win.wav");
 const MESSAGE: &str = "Time for an exercise!";
 
-/// Write the embedded icon to the temp dir so terminal-notifier can read it.
-fn icon_path() -> Option<std::path::PathBuf> {
-    let path = std::env::temp_dir().join("pomosport-icon.png");
-    std::fs::write(&path, ICON).ok()?;
+/// Write an embedded asset to a per-process file in the temp dir so external
+/// tools (terminal-notifier, afplay) can read it.
+fn write_asset(name: &str, bytes: &[u8]) -> Option<PathBuf> {
+    let path = std::env::temp_dir().join(format!("pomosport-{}-{name}", std::process::id()));
+    std::fs::write(&path, bytes).ok()?;
     Some(path)
+}
+
+fn icon_path() -> Option<&'static PathBuf> {
+    static PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
+    PATH.get_or_init(|| write_asset("icon.png", ICON)).as_ref()
 }
 
 /// Terminal bell plus a macOS notification; failures are ignored.
@@ -92,19 +100,26 @@ fn clack(playing: &mut Vec<Child>, steps: u32) {
     }
 }
 
-/// Victory fanfare when the wheel lands, written to the temp dir for afplay.
-/// Fire and forget; it plays alongside any clack still ringing.
+/// Victory fanfare when the wheel lands. Fire and forget; it plays alongside
+/// any clack still ringing, but never overlaps another fanfare.
 /// To mute, make this function return early.
-fn win() {
-    let path = std::env::temp_dir().join("pomosport-win.wav");
-    if std::fs::write(&path, WIN_SOUND).is_err() {
+fn win(playing: &mut Option<Child>) {
+    static PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
+    if playing
+        .as_mut()
+        .is_some_and(|c| matches!(c.try_wait(), Ok(None)))
+    {
         return;
     }
-    let _ = Command::new("afplay")
+    let Some(path) = PATH.get_or_init(|| write_asset("win.wav", WIN_SOUND)) else {
+        return;
+    };
+    *playing = Command::new("afplay")
         .arg(path)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .spawn();
+        .spawn()
+        .ok();
 }
 
 fn restore() {
@@ -137,6 +152,7 @@ fn main() -> io::Result<()> {
 fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> io::Result<()> {
     let mut last = Instant::now();
     let mut playing = Vec::new();
+    let mut winning = None;
     while !app.quit {
         terminal.draw(|f| ui::draw(f, app))?;
         if event::poll(Duration::from_millis(50))? {
@@ -160,7 +176,7 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> 
         last = now;
         clack(&mut playing, app.take_clacks());
         if app.take_wheel_landed() {
-            win();
+            win(&mut winning);
         }
     }
     Ok(())
