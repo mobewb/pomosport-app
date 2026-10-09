@@ -30,6 +30,14 @@ impl Wheel {
         }
     }
 
+    /// Jump to the final position the spin was heading for.
+    fn land(&mut self) {
+        let left = (self.steps_total - self.steps_done) as usize;
+        self.pos = (self.pos + left) % self.len;
+        self.steps_done = self.steps_total;
+        self.landed = true;
+    }
+
     /// Advance the spin; returns how many highlight steps were taken.
     fn advance(&mut self, dt: Duration) -> u32 {
         let before = self.steps_done;
@@ -190,7 +198,14 @@ impl App {
         match self.phase {
             // A skipped session still spins the wheel but does not count.
             Phase::Work => self.start_wheel(false),
-            Phase::Wheel => self.enter(),
+            // First press lands a spinning wheel (same result, no more clacks).
+            Phase::Wheel => match self.wheel.as_mut().filter(|w| !w.landed) {
+                Some(w) => {
+                    w.land();
+                    self.landed_event = true;
+                }
+                None => self.enter(),
+            },
             Phase::Break { .. } => self.start_work(),
         }
     }

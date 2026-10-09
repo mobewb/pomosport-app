@@ -6,14 +6,36 @@ use common::*;
 use pomosport::app::{App, Config, Phase};
 
 #[test]
-fn skip_on_wheel_waits_for_landing() {
+fn skip_on_spinning_wheel_lands_it_then_second_skip_starts_break() {
     let mut a = spun_app(4);
     a.skip();
-    assert_eq!(a.phase, Phase::Wheel, "still spinning");
-    adv(&mut a, 60 * S);
+    assert_eq!(a.phase, Phase::Wheel, "landed, still showing the result");
+    assert!(a.result().is_some());
+    assert!(a.take_wheel_landed(), "win sound fires");
     a.skip();
     assert_eq!(a.phase, Phase::Break { long: false });
     assert!(a.wheel.is_none());
+    assert!(!a.take_wheel_landed());
+}
+
+#[test]
+fn landing_early_picks_the_same_exercise_as_the_full_spin() {
+    for seed in 0..20 {
+        let mut early = spun_app(seed);
+        early.skip();
+        let mut full = spun_app(seed);
+        adv(&mut full, 60 * S);
+        assert_eq!(early.result(), full.result(), "seed {seed}");
+    }
+}
+
+#[test]
+fn landing_early_does_not_double_fire_the_one_shot() {
+    let mut a = spun_app(2);
+    a.skip();
+    adv(&mut a, 10 * S);
+    assert!(a.take_wheel_landed());
+    assert!(!a.take_wheel_landed());
 }
 
 #[test]
