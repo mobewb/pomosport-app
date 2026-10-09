@@ -1,7 +1,9 @@
 //! Side effects outside the terminal: sounds, notifications and the temp
 //! files that carry embedded assets to `afplay` and `terminal-notifier`.
+use std::fs::{DirBuilder, OpenOptions};
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::os::unix::fs::DirBuilderExt;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::OnceLock;
 
@@ -10,15 +12,38 @@ const WIN_SOUND: &[u8] = include_bytes!("../assets/win.wav");
 pub const WORK_DONE: &str = "Time for an exercise!";
 pub const BREAK_DONE: &str = "Break over, back to work!";
 
-/// Write an embedded asset to a stable file in the temp dir so external tools
-/// (terminal-notifier, afplay) can read it. Reused across runs when unchanged.
-fn write_asset(name: &str, bytes: &[u8]) -> Option<PathBuf> {
-    let path = std::env::temp_dir().join(format!("pomosport-{}-{name}", env!("CARGO_PKG_VERSION")));
-    let fresh = std::fs::metadata(&path).is_ok_and(|m| m.len() == bytes.len() as u64);
-    if !fresh {
-        std::fs::write(&path, bytes).ok()?;
+/// Write an embedded asset into `dir` so external tools (terminal-notifier,
+/// afplay) can read it. The file is trusted only if its content matches;
+/// otherwise it is written under a fresh temp name and renamed into place, so
+/// a symlink planted at the target is replaced rather than followed.
+pub fn write_asset_in(dir: &Path, name: &str, bytes: &[u8]) -> Option<PathBuf> {
+    let path = dir.join(name);
+    if std::fs::read(&path).is_ok_and(|b| b == bytes) {
+        return Some(path);
+    }
+    DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+        .ok()?;
+    let tmp = dir.join(format!(".{name}.{}.tmp", std::process::id()));
+    let _ = std::fs::remove_file(&tmp);
+    let written = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)
+        .and_then(|mut f| f.write_all(bytes))
+        .and_then(|()| std::fs::rename(&tmp, &path));
+    if written.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+        return None;
     }
     Some(path)
+}
+
+/// Assets live in the per-user cache dir (`~/Library/Caches/pomosport` on macOS).
+fn write_asset(name: &str, bytes: &[u8]) -> Option<PathBuf> {
+    write_asset_in(&dirs::cache_dir()?.join("pomosport"), name, bytes)
 }
 
 fn icon_path() -> Option<&'static PathBuf> {
@@ -100,21 +125,4 @@ pub fn win(playing: &mut Option<Child>) {
         .stderr(Stdio::null())
         .spawn()
         .ok();
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Inline: exercises the private `write_asset`.
-    #[test]
-    fn asset_file_is_written_once_and_reused() {
-        let name = format!("test-{}.bin", std::process::id());
-        let path = write_asset(&name, b"abc").unwrap();
-        let first = std::fs::metadata(&path).unwrap().modified().unwrap();
-        assert_eq!(write_asset(&name, b"xyz"), Some(path.clone()));
-        assert_eq!(std::fs::metadata(&path).unwrap().modified().unwrap(), first);
-        assert_eq!(std::fs::read(&path).unwrap(), b"abc");
-        std::fs::remove_file(path).unwrap();
-    }
 }
