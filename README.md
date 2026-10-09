@@ -60,9 +60,12 @@ means the last 24 hours and "week" the last 7 days).
 
 ## Development
 
-`mise.toml` pins the Rust toolchain; run `mise install` in the repo root. CI
-(`.github/workflows/ci.yml`, macOS) uses the same pin and runs fmt, clippy and
-tests. Tagging `vX.Y.Z` builds and attaches release binaries
+`mise.toml` pins the Rust toolchain and [prek](https://github.com/j178/prek);
+run `mise install` in the repo root. Check everything with
+`prek run --all-files` (cargo fmt, clippy, file hygiene) and `cargo test`;
+`prek install` runs the hooks on every commit. CI
+(`.github/workflows/ci.yml`, macOS) uses the same pins and runs the same
+checks. Tagging `vX.Y.Z` builds and attaches release binaries
 (`.github/workflows/release.yml`).
 
 ## Notifications
