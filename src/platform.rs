@@ -26,14 +26,20 @@ fn icon_path() -> Option<&'static PathBuf> {
     PATH.get_or_init(|| write_asset("icon.png", ICON)).as_ref()
 }
 
+/// Drop finished child processes so they don't linger as zombies.
+pub fn reap(children: &mut Vec<Child>) {
+    children.retain_mut(|c| matches!(c.try_wait(), Ok(None)));
+}
+
 /// Terminal bell (unless muted) plus a macOS notification (unless disabled);
-/// failures are ignored.
+/// failures are ignored. Spawned helpers are tracked in `running` for reaping.
 /// Uses `terminal-notifier` (custom icon) when installed, else `osascript`.
-pub fn notify(message: &str, mute: bool, no_notify: bool) {
+pub fn notify(message: &str, mute: bool, no_notify: bool, running: &mut Vec<Child>) {
     if !mute {
         let _ = io::stdout().write_all(b"\x07");
         let _ = io::stdout().flush();
     }
+    reap(running);
     if no_notify {
         return;
     }
@@ -42,21 +48,18 @@ pub fn notify(message: &str, mute: bool, no_notify: bool) {
     if let Some(icon) = icon_path() {
         tn.arg("-appIcon").arg(icon);
     }
-    let sent = tn
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .is_ok();
-    if !sent {
-        let _ = Command::new("osascript")
+    let spawned = tn.stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    let child = spawned.or_else(|_| {
+        Command::new("osascript")
             .args([
                 "-e",
                 &format!("display notification \"{message}\" with title \"pomosport\""),
             ])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .spawn();
-    }
+            .spawn()
+    });
+    running.extend(child);
 }
 
 const MAX_CLACKS: usize = 8;
@@ -64,7 +67,7 @@ const MAX_CLACKS: usize = 8;
 /// One short clack per highlight step, overlapping if needed.
 /// Finished players are reaped; at most `MAX_CLACKS` run at once.
 pub fn clack(playing: &mut Vec<Child>, steps: u32) {
-    playing.retain_mut(|c| matches!(c.try_wait(), Ok(None)));
+    reap(playing);
     for _ in 0..steps {
         if playing.len() >= MAX_CLACKS {
             break;

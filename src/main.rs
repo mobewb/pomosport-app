@@ -100,6 +100,7 @@ fn run(
 ) -> io::Result<()> {
     let mut last = Instant::now();
     let mut playing = Vec::new();
+    let mut notifying = Vec::new();
     let mut winning = None;
     while !app.quit {
         terminal.draw(|f| ui::draw(f, app))?;
@@ -113,10 +114,10 @@ fn run(
             // Log as soon as work ends so quitting mid-spin can't lose it.
             record(app, history_path);
             app.today += 1;
-            notify(WORK_DONE, mute, no_notify);
+            notify(WORK_DONE, mute, no_notify, &mut notifying);
         }
         if app.take_break_ended() {
-            notify(BREAK_DONE, mute, no_notify);
+            notify(BREAK_DONE, mute, no_notify, &mut notifying);
         }
         last = now;
         let clacks = app.take_clacks();
