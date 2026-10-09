@@ -36,6 +36,9 @@ struct Cli {
     /// Comma-separated exercises for the wheel (1 to 8)
     #[arg(long, value_parser = parse_exercises)]
     exercises: Option<Vec<String>>,
+    /// Start timers without pressing Space
+    #[arg(long)]
+    auto_start: bool,
     /// Disable all sounds (clacks, fanfare, bell)
     #[arg(long)]
     mute: bool,
@@ -75,7 +78,8 @@ fn minutes(m: f64) -> Duration {
 
 const ICON: &[u8] = include_bytes!("../assets/icon.png");
 const WIN_SOUND: &[u8] = include_bytes!("../assets/win.wav");
-const MESSAGE: &str = "Time for an exercise!";
+const WORK_DONE: &str = "Time for an exercise!";
+const BREAK_DONE: &str = "Break over, back to work!";
 
 /// Write an embedded asset to a stable file in the temp dir so external tools
 /// (terminal-notifier, afplay) can read it. Reused across runs when unchanged.
@@ -96,7 +100,7 @@ fn icon_path() -> Option<&'static PathBuf> {
 /// Terminal bell (unless muted) plus a macOS notification (unless disabled);
 /// failures are ignored.
 /// Uses `terminal-notifier` (custom icon) when installed, else `osascript`.
-fn notify(mute: bool, no_notify: bool) {
+fn notify(message: &str, mute: bool, no_notify: bool) {
     if !mute {
         let _ = io::stdout().write_all(b"\x07");
         let _ = io::stdout().flush();
@@ -105,7 +109,7 @@ fn notify(mute: bool, no_notify: bool) {
         return;
     }
     let mut tn = Command::new("terminal-notifier");
-    tn.args(["-title", "pomosport", "-message", MESSAGE]);
+    tn.args(["-title", "pomosport", "-message", message]);
     if let Some(icon) = icon_path() {
         tn.arg("-appIcon").arg(icon);
     }
@@ -118,7 +122,7 @@ fn notify(mute: bool, no_notify: bool) {
         let _ = Command::new("osascript")
             .args([
                 "-e",
-                &format!("display notification \"{MESSAGE}\" with title \"pomosport\""),
+                &format!("display notification \"{message}\" with title \"pomosport\""),
             ])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -189,6 +193,7 @@ fn main() -> io::Result<()> {
         long: minutes(cli.long),
         cycles: cli.cycles,
         exercises: cli.exercises.unwrap_or(Config::default().exercises),
+        auto_start: cli.auto_start,
     });
 
     let default_hook = std::panic::take_hook();
@@ -234,7 +239,10 @@ fn run(
         }
         let now = Instant::now();
         if app.tick(now - last) {
-            notify(mute, no_notify);
+            notify(WORK_DONE, mute, no_notify);
+        }
+        if app.take_break_ended() {
+            notify(BREAK_DONE, mute, no_notify);
         }
         last = now;
         let clacks = app.take_clacks();

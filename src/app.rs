@@ -62,6 +62,8 @@ pub struct Config {
     /// Work sessions per cycle; the break after the last one is long.
     pub cycles: u32,
     pub exercises: Vec<String>,
+    /// Start timers without pressing Space (work after a break, and at launch).
+    pub auto_start: bool,
 }
 
 impl Default for Config {
@@ -72,6 +74,7 @@ impl Default for Config {
             long: Duration::from_secs(15 * 60),
             cycles: 4,
             exercises: DEFAULT_EXERCISES.map(String::from).to_vec(),
+            auto_start: false,
         }
     }
 }
@@ -88,6 +91,7 @@ pub struct App {
     /// Highlight steps since the last `take_clacks`.
     clacks: u32,
     landed_event: bool,
+    break_ended_event: bool,
     rng: StdRng,
 }
 
@@ -100,12 +104,13 @@ impl App {
         Self {
             phase: Phase::Work,
             remaining: cfg.work,
-            running: false,
+            running: cfg.auto_start,
             completed: 0,
             quit: false,
             wheel: None,
             clacks: 0,
             landed_event: false,
+            break_ended_event: false,
             rng: StdRng::seed_from_u64(seed),
             cfg,
         }
@@ -182,6 +187,11 @@ impl App {
         std::mem::take(&mut self.landed_event)
     }
 
+    /// True once, right after a break runs out on its own.
+    pub fn take_break_ended(&mut self) -> bool {
+        std::mem::take(&mut self.break_ended_event)
+    }
+
     /// The exercise the wheel landed on, once it has stopped.
     pub fn result(&self) -> Option<&str> {
         self.wheel
@@ -207,6 +217,7 @@ impl App {
                 self.finish_work();
                 return true;
             }
+            self.break_ended_event = true;
             self.start_work();
         }
         false
@@ -223,7 +234,7 @@ impl App {
     fn start_work(&mut self) {
         self.phase = Phase::Work;
         self.remaining = self.cfg.work;
-        self.running = false;
+        self.running = self.cfg.auto_start;
     }
 }
 
@@ -346,6 +357,33 @@ mod tests {
         a.tick(Duration::from_secs(3600));
         assert_eq!(a.phase, Phase::Work);
         assert_eq!(a.remaining, 9 * S);
+    }
+
+    #[test]
+    fn auto_start_runs_work_after_break_and_reports_it() {
+        let mut a = App::new(Config {
+            auto_start: true,
+            ..tcfg()
+        });
+        assert!(a.running, "starts at launch");
+        adv(&mut a, 2 * S);
+        adv(&mut a, 60 * S);
+        a.enter();
+        assert!(!a.take_break_ended());
+        adv(&mut a, S);
+        assert_eq!(a.phase, Phase::Work);
+        assert!(a.running);
+        assert!(a.take_break_ended());
+        assert!(!a.take_break_ended());
+    }
+
+    #[test]
+    fn manual_start_waits_for_space_after_break() {
+        let mut a = App::new(tcfg());
+        a.skip();
+        adv(&mut a, 2 * S);
+        assert_eq!(a.phase, Phase::Work);
+        assert!(!a.running);
     }
 
     #[test]
