@@ -62,7 +62,12 @@ means the last 24 hours and "week" the last 7 days).
 
 `mise.toml` pins the Rust toolchain and [prek](https://github.com/j178/prek);
 run `mise install` in the repo root. Check everything with
-`prek run --all-files` (cargo fmt, clippy, file hygiene) and `cargo test`;
+`prek run --all-files` (cargo fmt, clippy, file hygiene) and `cargo test`.
+Tests live in `tests/` (integration tests, one file per topic: `timer`, `wheel`,
+`config`, `cli_validation`, `history_stats`, `ui`; shared fixtures in
+`tests/common/`); run one with `cargo test --test timer`. Two tiny unit tests
+stay inline in `src/` because they need private items.
+
 `prek install` runs the hooks on every commit. CI
 (`.github/workflows/ci.yml`, macOS) uses the same pins and runs the same
 checks. Tagging `vX.Y.Z` builds and attaches release binaries
