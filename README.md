@@ -37,7 +37,7 @@ pomosport stats                           # completed sessions: today, week, tot
 Options: `--cycles N` (sessions before a long break, default 4), `--exercises
 "10 push-ups,20 squats"`, `--auto-start`, `--mute`, `--no-notify`.
 
-Keys: Space start/pause, s skip, r reset, Enter continue, q/Esc/Ctrl-C quit.
+Keys: Space start/pause, s skip (during work it still spins the wheel but is not counted or logged), r reset, Enter continue, q/Esc/Ctrl-C quit.
 
 ## Config and history
 

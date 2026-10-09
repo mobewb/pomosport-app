@@ -73,13 +73,36 @@ fn tick_reports_work_end_only() {
 }
 
 #[test]
-fn skipping_work_does_not_count_or_spin_wheel() {
+fn skipping_work_spins_wheel_but_does_not_count() {
     let mut a = app();
     a.skip();
+    assert_eq!(a.phase, Phase::Wheel);
+    assert_eq!(a.completed, 0);
+    assert!(a.wheel.is_some());
+    assert!(!a.session_counts(), "not logged");
+    adv(&mut a, 60 * S);
+    a.enter();
     assert_eq!(a.phase, Phase::Break { long: false });
     assert_eq!(a.completed, 0);
-    assert!(a.wheel.is_none());
-    assert!(a.running);
+}
+
+#[test]
+fn skipped_session_never_earns_the_long_break() {
+    let mut a = app();
+    for _ in 0..4 {
+        a.toggle();
+        adv(&mut a, 10 * S);
+        assert!(a.session_counts());
+        adv(&mut a, 60 * S);
+        a.enter();
+        adv(&mut a, 10 * S);
+    }
+    assert_eq!(a.completed, 4);
+    a.skip();
+    adv(&mut a, 60 * S);
+    a.enter();
+    assert_eq!(a.phase, Phase::Break { long: false });
+    assert_eq!(a.completed, 4);
 }
 
 #[test]
@@ -113,6 +136,8 @@ fn auto_start_runs_work_after_break_and_reports_it() {
 fn manual_start_waits_for_space_after_break() {
     let mut a = App::new(tcfg());
     a.skip();
+    adv(&mut a, 60 * S);
+    a.enter();
     adv(&mut a, 2 * S);
     assert_eq!(a.phase, Phase::Work);
     assert!(!a.running);
@@ -131,7 +156,7 @@ fn keys_drive_the_app() {
     press(&mut a, KeyCode::Char(' '), none);
     assert!(!a.running);
     press(&mut a, KeyCode::Char('s'), none);
-    assert_eq!(a.phase, Phase::Break { long: false });
+    assert_eq!(a.phase, Phase::Wheel);
     press(&mut a, KeyCode::Char('r'), none);
     assert_eq!(a.phase, Phase::Work);
     press(&mut a, KeyCode::Char('x'), none);
@@ -163,6 +188,8 @@ fn key_release_is_ignored() {
 #[test]
 fn skip_from_break_returns_to_work() {
     let mut a = app();
+    a.skip();
+    adv(&mut a, 60 * S);
     a.skip();
     a.skip();
     assert_eq!(a.phase, Phase::Work);

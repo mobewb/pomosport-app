@@ -91,6 +91,8 @@ pub struct App {
     pub today: u32,
     pub quit: bool,
     pub wheel: Option<Wheel>,
+    /// False while the wheel runs for a skipped session: not counted, not logged.
+    counts: bool,
     /// Highlight steps since the last `take_clacks`.
     clacks: u32,
     landed_event: bool,
@@ -112,6 +114,7 @@ impl App {
             today: 0,
             quit: false,
             wheel: None,
+            counts: true,
             clacks: 0,
             landed_event: false,
             break_ended_event: false,
@@ -177,8 +180,8 @@ impl App {
 
     pub fn skip(&mut self) {
         match self.phase {
-            // A skipped session earns no exercise and does not count.
-            Phase::Work => self.start_break(),
+            // A skipped session still spins the wheel but does not count.
+            Phase::Work => self.start_wheel(false),
             Phase::Wheel => self.enter(),
             Phase::Break { .. } => self.start_work(),
         }
@@ -192,7 +195,8 @@ impl App {
     }
 
     fn start_break(&mut self) {
-        let long = self.completed > 0 && self.completed.is_multiple_of(self.cfg.cycles);
+        let long =
+            self.counts && self.completed > 0 && self.completed.is_multiple_of(self.cfg.cycles);
         self.phase = Phase::Break { long };
         self.remaining = if long { self.cfg.long } else { self.cfg.short };
         self.running = true;
@@ -201,6 +205,12 @@ impl App {
 
     pub fn take_clacks(&mut self) -> u32 {
         std::mem::take(&mut self.clacks)
+    }
+
+    /// Whether the current wheel belongs to a completed session (so it is
+    /// logged), as opposed to a skipped one.
+    pub fn session_counts(&self) -> bool {
+        self.counts
     }
 
     /// True once, right after the wheel stops on its result.
@@ -246,6 +256,11 @@ impl App {
 
     fn finish_work(&mut self) {
         self.completed += 1;
+        self.start_wheel(true);
+    }
+
+    fn start_wheel(&mut self, counts: bool) {
+        self.counts = counts;
         self.phase = Phase::Wheel;
         self.running = false;
         self.remaining = Duration::ZERO;

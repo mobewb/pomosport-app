@@ -118,7 +118,7 @@ fn run(
         last = now;
         let clacks = app.take_clacks();
         let landed = app.take_wheel_landed();
-        if landed {
+        if landed && app.session_counts() {
             record(app, history_path);
             app.today += 1;
         }
