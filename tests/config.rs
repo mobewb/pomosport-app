@@ -84,3 +84,16 @@ fn contradictory_flags_are_rejected() {
         assert!(Cli::try_parse_from(["pomosport", pair[0], pair[1]]).is_err());
     }
 }
+
+#[test]
+fn file_exercises_are_trimmed_and_blanks_dropped() {
+    let s = resolve(cli(&[]), file("exercises = [\" a \", \"\", \"  \", \"b\"]")).unwrap();
+    assert_eq!(s.config.exercises, ["a", "b"]);
+}
+
+#[test]
+fn file_exercises_that_are_all_blank_or_too_many_are_rejected() {
+    assert!(resolve(cli(&[]), file("exercises = [\"\", \" \"]")).is_err());
+    let nine = "exercises = [\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\",\"9\"]";
+    assert!(resolve(cli(&[]), file(nine)).is_err());
+}

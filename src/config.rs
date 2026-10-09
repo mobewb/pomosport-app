@@ -85,7 +85,13 @@ pub fn parse_minutes(s: &str) -> Result<f64, String> {
     check_minutes(s.parse().map_err(|_| format!("`{s}` is not a number"))?)
 }
 
-fn check_exercises(list: Vec<String>) -> Result<Vec<String>, String> {
+/// Trims entries and drops blanks; 1 to 8 remaining entries fit the wheel.
+fn clean_exercises(list: impl IntoIterator<Item = String>) -> Result<Vec<String>, String> {
+    let list: Vec<String> = list
+        .into_iter()
+        .map(|e| e.trim().to_string())
+        .filter(|e| !e.is_empty())
+        .collect();
     if (1..=8).contains(&list.len()) {
         Ok(list)
     } else {
@@ -93,15 +99,9 @@ fn check_exercises(list: Vec<String>) -> Result<Vec<String>, String> {
     }
 }
 
-/// Splits a comma-separated list, ignoring blanks; 1 to 8 entries fit the wheel.
+/// Splits a comma-separated list for `--exercises`.
 pub fn parse_exercises(s: &str) -> Result<Vec<String>, String> {
-    check_exercises(
-        s.split(',')
-            .map(str::trim)
-            .filter(|e| !e.is_empty())
-            .map(String::from)
-            .collect(),
-    )
+    clean_exercises(s.split(',').map(String::from))
 }
 
 pub fn default_path() -> Option<PathBuf> {
@@ -144,7 +144,7 @@ pub fn resolve(cli: Cli, file: FileConfig) -> Result<Settings, String> {
         return Err("cycles must be between 1 and 99".into());
     }
     let exercises = match cli.exercises.or(file.exercises) {
-        Some(list) => check_exercises(list.into_iter().map(|e| e.trim().to_string()).collect())?,
+        Some(list) => clean_exercises(list)?,
         None => d.exercises,
     };
     Ok(Settings {
