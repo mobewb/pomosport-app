@@ -14,6 +14,7 @@ jobs:
       # Installs the Rust version pinned in mise.toml, so CI and local stay in sync.
       - uses: jdx/mise-action@v2
       - uses: Swatinem/rust-cache@v2
+      - run: rustup component add rustfmt clippy
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
