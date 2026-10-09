@@ -81,7 +81,7 @@ fn main() -> io::Result<()> {
 
 /// Log the finished session; history is best effort and never interrupts the timer.
 fn record(app: &App, path: Option<&Path>) {
-    if let (Some(path), Some(exercise)) = (path, app.result()) {
+    if let (Some(path), Some(exercise)) = (path, app.pending_exercise()) {
         let entry = history::Entry {
             ts: history::now(),
             exercise: exercise.to_string(),
@@ -110,6 +110,9 @@ fn run(
         }
         let now = Instant::now();
         if app.tick(now - last) {
+            // Log as soon as work ends so quitting mid-spin can't lose it.
+            record(app, history_path);
+            app.today += 1;
             notify(WORK_DONE, mute, no_notify);
         }
         if app.take_break_ended() {
@@ -118,10 +121,6 @@ fn run(
         last = now;
         let clacks = app.take_clacks();
         let landed = app.take_wheel_landed();
-        if landed && app.session_counts() {
-            record(app, history_path);
-            app.today += 1;
-        }
         if !mute {
             clack(&mut playing, clacks);
             if landed {

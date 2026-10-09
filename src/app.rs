@@ -30,10 +30,14 @@ impl Wheel {
         }
     }
 
+    /// Where the spin will stop (or has stopped).
+    fn final_pos(&self) -> usize {
+        (self.pos + (self.steps_total - self.steps_done) as usize) % self.len
+    }
+
     /// Jump to the final position the spin was heading for.
     fn land(&mut self) {
-        let left = (self.steps_total - self.steps_done) as usize;
-        self.pos = (self.pos + left) % self.len;
+        self.pos = self.final_pos();
         self.steps_done = self.steps_total;
         self.landed = true;
     }
@@ -243,6 +247,13 @@ impl App {
     /// True once, right after a break runs out on its own.
     pub fn take_break_ended(&mut self) -> bool {
         std::mem::take(&mut self.break_ended_event)
+    }
+
+    /// The exercise the wheel is heading for (already decided while it spins),
+    /// so a finished session can be logged before the wheel stops.
+    pub fn pending_exercise(&self) -> Option<&str> {
+        let w = self.wheel.as_ref()?;
+        Some(self.cfg.exercises[w.final_pos()].as_str())
     }
 
     /// The exercise the wheel landed on, once it has stopped.

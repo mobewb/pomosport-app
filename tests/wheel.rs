@@ -119,3 +119,19 @@ fn enter_ignored_while_spinning() {
     a.enter();
     assert_eq!(a.phase, Phase::Wheel);
 }
+
+#[test]
+fn pending_exercise_is_known_when_work_ends_and_matches_the_result() {
+    for seed in 0..20 {
+        let mut a = spun_app(seed);
+        let pending = a.pending_exercise().unwrap().to_string();
+        assert!(a.result().is_none(), "still spinning");
+        adv(&mut a, 60 * S);
+        assert_eq!(a.result(), Some(pending.as_str()), "seed {seed}");
+    }
+}
+
+#[test]
+fn no_pending_exercise_outside_the_wheel() {
+    assert!(app().pending_exercise().is_none());
+}
