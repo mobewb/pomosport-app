@@ -65,7 +65,7 @@ pub fn draw(f: &mut Frame, app: &App) {
             .iter()
             .enumerate()
             .map(|(i, e)| {
-                if i == w.pos {
+                if i == w.sector() {
                     Line::styled(
                         format!("> {e} <"),
                         Style::default().fg(Color::Black).bg(Color::Yellow),
