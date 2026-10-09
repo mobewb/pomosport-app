@@ -115,7 +115,7 @@ impl App {
     /// Continue from the wheel to the break.
     pub fn enter(&mut self) {
         if self.phase == Phase::Wheel && self.wheel.as_ref().is_some_and(|w| w.landed) {
-            let long = self.completed % 4 == 0;
+            let long = self.completed.is_multiple_of(4);
             self.phase = Phase::Break { long };
             self.remaining = if long { self.cfg.long } else { self.cfg.short };
             self.running = true;
