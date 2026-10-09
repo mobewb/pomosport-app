@@ -33,12 +33,17 @@ impl Drop for TermGuard {
 fn main() -> io::Result<()> {
     let cli = Cli::parse();
     if cli.command.is_some() {
+        let now = history::now();
         let entries = history::default_path()
             .map(|p| history::load(&p))
             .unwrap_or_default();
         print!(
             "{}",
-            history::render(&history::summarize(&entries, history::now()))
+            history::render(&history::summarize(
+                &entries,
+                now,
+                history::local_midnight(now)
+            ))
         );
         return Ok(());
     }
@@ -57,7 +62,10 @@ fn main() -> io::Result<()> {
     let history_path = history::default_path();
     let mut app = App::new(settings.config);
     if let Some(path) = &history_path {
-        app.today = history::summarize(&history::load(path), history::now()).today;
+        app.today = {
+            let now = history::now();
+            history::summarize(&history::load(path), now, history::local_midnight(now)).today
+        };
     }
 
     let default_hook = std::panic::take_hook();

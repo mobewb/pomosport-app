@@ -57,13 +57,34 @@ pub struct Stats {
     pub per_exercise: BTreeMap<String, u32>,
 }
 
-/// Counts sessions in rolling windows (last 24 hours, last 7 days), which
-/// avoids needing the local time zone.
-pub fn summarize(entries: &[Entry], now: u64) -> Stats {
+/// Unix time of the most recent local midnight at or before `now`.
+pub fn local_midnight(now: u64) -> u64 {
+    let t = now as libc::time_t;
+    // SAFETY: `tm` is plain data that localtime_r fills in, mktime only reads
+    // and normalises it, and we only call these from the single UI thread.
+    unsafe {
+        let mut tm: libc::tm = std::mem::zeroed();
+        if libc::localtime_r(&t, &mut tm).is_null() {
+            return now - now % DAY; // UTC fallback
+        }
+        tm.tm_hour = 0;
+        tm.tm_min = 0;
+        tm.tm_sec = 0;
+        tm.tm_isdst = -1;
+        match libc::mktime(&mut tm) {
+            -1 => now - now % DAY,
+            midnight => midnight as u64,
+        }
+    }
+}
+
+/// `today` counts sessions since `today_start` (a local midnight, see
+/// `local_midnight`); `week` is a rolling window of the last 7 days.
+pub fn summarize(entries: &[Entry], now: u64, today_start: u64) -> Stats {
     let mut st = Stats::default();
     for e in entries {
         let age = now.saturating_sub(e.ts);
-        st.today += u32::from(age < DAY);
+        st.today += u32::from(e.ts >= today_start);
         st.week += u32::from(age < 7 * DAY);
         st.total += 1;
         st.work_minutes += e.work_minutes;
@@ -74,7 +95,7 @@ pub fn summarize(entries: &[Entry], now: u64) -> Stats {
 
 pub fn render(st: &Stats) -> String {
     let mut out = format!(
-        "Sessions: {} today, {} this week, {} total\nWork time: {:.0} min\n",
+        "Sessions: {} today, {} in the last 7 days, {} total\nWork time: {:.0} min\n",
         st.today, st.week, st.total, st.work_minutes
     );
     for (exercise, n) in &st.per_exercise {

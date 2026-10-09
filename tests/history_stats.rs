@@ -57,11 +57,37 @@ fn summarize_counts_windows_and_exercises() {
         work_minutes: 25.0,
     };
     let entries = [e(60, "squats"), e(2 * DAY, "squats"), e(8 * DAY, "burpees")];
-    let st = summarize(&entries, now);
+    // Pretend local midnight was 3 hours ago: the 60 s-old session is today,
+    // the 2-day-old one is not.
+    let st = summarize(&entries, now, now - 3 * 3600);
     assert_eq!((st.today, st.week, st.total), (1, 2, 3));
     assert_eq!(st.work_minutes, 75.0);
     assert_eq!(st.per_exercise["squats"], 2);
     let text = render(&st);
-    assert!(text.contains("1 today, 2 this week, 3 total") && text.contains("2 x squats"));
-    assert_eq!(summarize(&[], now), Stats::default());
+    assert!(text.contains("1 today, 2 in the last 7 days, 3 total") && text.contains("2 x squats"));
+    assert_eq!(summarize(&[], now, now), Stats::default());
+}
+
+#[test]
+fn today_is_a_calendar_day_not_a_rolling_24_hours() {
+    let now = 100 * DAY;
+    let e = |ts| Entry {
+        ts,
+        exercise: "x".into(),
+        work_minutes: 1.0,
+    };
+    // Just before and just after a midnight 1 hour ago.
+    let midnight = now - 3600;
+    let st = summarize(&[e(midnight - 1), e(midnight), e(now)], now, midnight);
+    assert_eq!(st.today, 2);
+    assert_eq!(st.total, 3);
+}
+
+#[test]
+fn local_midnight_is_within_the_last_day_and_idempotent() {
+    let now = pomosport::history::now();
+    let m = pomosport::history::local_midnight(now);
+    assert!(m <= now);
+    assert!(now - m < DAY + 3600, "at most a day (plus a DST hour) ago");
+    assert_eq!(pomosport::history::local_midnight(m), m);
 }

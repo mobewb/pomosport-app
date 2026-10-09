@@ -56,7 +56,8 @@ no_notify = false
 
 Each completed session is appended as a JSON line to
 `~/.local/share/pomosport/history.jsonl` (used by `pomosport stats`; "today"
-means the last 24 hours and "week" the last 7 days).
+is the current calendar day in local time, and the week figure is a rolling
+last 7 days).
 
 ## Development
 
