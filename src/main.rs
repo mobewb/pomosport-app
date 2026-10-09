@@ -1,9 +1,10 @@
 mod app;
 mod config;
+mod history;
 mod ui;
 
 use std::io::{self, Write};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
@@ -142,6 +143,7 @@ fn main() -> io::Result<()> {
         }
     };
     let (mute, no_notify) = (settings.mute, settings.no_notify);
+    let history_path = history::default_path();
     let mut app = App::new(settings.config);
 
     let default_hook = std::panic::take_hook();
@@ -154,7 +156,25 @@ fn main() -> io::Result<()> {
     let _guard = TermGuard;
     execute!(io::stdout(), EnterAlternateScreen)?;
     let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
-    run(&mut terminal, &mut app, mute, no_notify)
+    run(
+        &mut terminal,
+        &mut app,
+        mute,
+        no_notify,
+        history_path.as_deref(),
+    )
+}
+
+/// Log the finished session; history is best effort and never interrupts the timer.
+fn record(app: &App, path: Option<&Path>) {
+    if let (Some(path), Some(exercise)) = (path, app.result()) {
+        let entry = history::Entry {
+            ts: history::now(),
+            exercise: exercise.to_string(),
+            work_minutes: app.cfg.work.as_secs_f64() / 60.0,
+        };
+        let _ = history::append(path, &entry);
+    }
 }
 
 fn run(
@@ -162,6 +182,7 @@ fn run(
     app: &mut App,
     mute: bool,
     no_notify: bool,
+    history_path: Option<&Path>,
 ) -> io::Result<()> {
     let mut last = Instant::now();
     let mut playing = Vec::new();
@@ -195,6 +216,9 @@ fn run(
         last = now;
         let clacks = app.take_clacks();
         let landed = app.take_wheel_landed();
+        if landed {
+            record(app, history_path);
+        }
         if !mute {
             clack(&mut playing, clacks);
             if landed {
