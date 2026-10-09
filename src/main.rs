@@ -1,4 +1,5 @@
 mod app;
+mod config;
 mod ui;
 
 use std::io::{self, Write};
@@ -16,65 +17,8 @@ use crossterm::{execute, ExecutableCommand};
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-use app::{App, Config};
-
-#[derive(Parser)]
-#[command(about = "Pomodoro timer with an exercise wheel")]
-struct Cli {
-    /// Work session length in minutes
-    #[arg(long, value_parser = parse_minutes, default_value_t = 25.0)]
-    work: f64,
-    /// Short break length in minutes
-    #[arg(long, value_parser = parse_minutes, default_value_t = 5.0)]
-    short: f64,
-    /// Long break length in minutes
-    #[arg(long, value_parser = parse_minutes, default_value_t = 15.0)]
-    long: f64,
-    /// Work sessions before a long break
-    #[arg(long, value_parser = clap::value_parser!(u32).range(1..=99), default_value_t = 4)]
-    cycles: u32,
-    /// Comma-separated exercises for the wheel (1 to 8)
-    #[arg(long, value_parser = parse_exercises)]
-    exercises: Option<Vec<String>>,
-    /// Start timers without pressing Space
-    #[arg(long)]
-    auto_start: bool,
-    /// Disable all sounds (clacks, fanfare, bell)
-    #[arg(long)]
-    mute: bool,
-    /// Disable desktop notifications
-    #[arg(long)]
-    no_notify: bool,
-}
-
-/// Accepts finite minutes in (0, 1440]; rejects 0, negatives, NaN and inf.
-fn parse_minutes(s: &str) -> Result<f64, String> {
-    let m: f64 = s.parse().map_err(|_| format!("`{s}` is not a number"))?;
-    if m.is_finite() && m > 0.0 && m <= 1440.0 {
-        Ok(m)
-    } else {
-        Err("must be greater than 0 and at most 1440 minutes".into())
-    }
-}
-
-/// Splits a comma-separated list, ignoring blanks; 1 to 8 entries fit the wheel.
-fn parse_exercises(s: &str) -> Result<Vec<String>, String> {
-    let list: Vec<String> = s
-        .split(',')
-        .map(str::trim)
-        .filter(|e| !e.is_empty())
-        .map(String::from)
-        .collect();
-    if (1..=8).contains(&list.len()) {
-        Ok(list)
-    } else {
-        Err("give between 1 and 8 comma-separated exercises".into())
-    }
-}
-
-fn minutes(m: f64) -> Duration {
-    Duration::from_secs_f64((m * 60.0).max(0.0))
-}
+use app::App;
+use config::{Cli, FileConfig};
 
 const ICON: &[u8] = include_bytes!("../assets/icon.png");
 const WIN_SOUND: &[u8] = include_bytes!("../assets/win.wav");
@@ -186,15 +130,19 @@ impl Drop for TermGuard {
 
 fn main() -> io::Result<()> {
     let cli = Cli::parse();
-    let (mute, no_notify) = (cli.mute, cli.no_notify);
-    let mut app = App::new(Config {
-        work: minutes(cli.work),
-        short: minutes(cli.short),
-        long: minutes(cli.long),
-        cycles: cli.cycles,
-        exercises: cli.exercises.unwrap_or(Config::default().exercises),
-        auto_start: cli.auto_start,
-    });
+    let file = match config::default_path() {
+        Some(path) => config::load(&path),
+        None => Ok(FileConfig::default()),
+    };
+    let settings = match file.and_then(|file| config::resolve(cli, file)) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("pomosport: {e}");
+            std::process::exit(2);
+        }
+    };
+    let (mute, no_notify) = (settings.mute, settings.no_notify);
+    let mut app = App::new(settings.config);
 
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -255,26 +203,4 @@ fn run(
         }
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn exercises_parser_trims_and_bounds() {
-        assert_eq!(parse_exercises(" 5 a , ,b ").unwrap(), ["5 a", "b"]);
-        assert!(parse_exercises(" , ").is_err());
-        assert!(parse_exercises("1,2,3,4,5,6,7,8,9").is_err());
-    }
-
-    #[test]
-    fn minutes_parser_accepts_only_sane_values() {
-        for ok in ["25", "0.1", "1440"] {
-            assert!(parse_minutes(ok).is_ok(), "{ok}");
-        }
-        for bad in ["0", "-1", "NaN", "inf", "1441", "abc", ""] {
-            assert!(parse_minutes(bad).is_err(), "{bad}");
-        }
-    }
 }
