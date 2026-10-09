@@ -4,6 +4,9 @@ use std::time::Duration;
 
 pub const EXERCISES: [&str; 4] = ["10 push-ups", "20 squats", "10 crunches", "5 burpees"];
 
+/// Longest time step applied in one tick, so a laptop sleep can't jump the timer.
+const MAX_DT: Duration = Duration::from_secs(1);
+
 /// State of the spinning wheel; each step takes longer than the last.
 pub struct Wheel {
     pub pos: usize,
@@ -155,6 +158,7 @@ impl App {
 
     /// Advance time; returns true when a work session just ended on its own.
     pub fn tick(&mut self, dt: Duration) -> bool {
+        let dt = dt.min(MAX_DT);
         if let Some(w) = self.wheel.as_mut() {
             let was_landed = w.landed;
             self.clacks += w.advance(dt);
@@ -195,6 +199,18 @@ mod tests {
 
     const S: Duration = Duration::from_secs(1);
 
+    /// Tick in steps below `MAX_DT`; true if any tick reported a work end.
+    fn adv(a: &mut App, total: Duration) -> bool {
+        let mut ended = false;
+        let mut left = total;
+        while !left.is_zero() {
+            let step = left.min(S);
+            ended |= a.tick(step);
+            left -= step;
+        }
+        ended
+    }
+
     fn app() -> App {
         App::new(Config {
             work: 10 * S,
@@ -207,10 +223,10 @@ mod tests {
     fn work_expires_into_wheel_then_short_break() {
         let mut a = app();
         a.toggle();
-        a.tick(10 * S);
+        adv(&mut a, 10 * S);
         assert_eq!(a.phase, Phase::Wheel);
         assert_eq!(a.completed, 1);
-        a.tick(60 * S);
+        adv(&mut a, 60 * S);
         a.enter();
         assert_eq!(a.phase, Phase::Break { long: false });
         assert_eq!(a.remaining, 3 * S);
@@ -221,11 +237,11 @@ mod tests {
         let mut a = app();
         for i in 1..=4 {
             a.toggle();
-            a.tick(10 * S);
-            a.tick(60 * S);
+            adv(&mut a, 10 * S);
+            adv(&mut a, 60 * S);
             a.enter();
             assert_eq!(a.phase, Phase::Break { long: i == 4 });
-            a.tick(10 * S);
+            adv(&mut a, 10 * S);
             assert_eq!(a.phase, Phase::Work);
         }
     }
@@ -234,9 +250,9 @@ mod tests {
     fn timer_counts_down_and_expires() {
         let mut a = app();
         a.toggle();
-        a.tick(4 * S);
+        adv(&mut a, 4 * S);
         assert_eq!(a.remaining, 6 * S);
-        a.tick(6 * S);
+        adv(&mut a, 6 * S);
         assert_eq!(a.phase, Phase::Wheel);
     }
 
@@ -244,11 +260,11 @@ mod tests {
     fn tick_reports_work_end_only() {
         let mut a = app();
         a.toggle();
-        assert!(!a.tick(4 * S));
-        assert!(a.tick(6 * S));
-        a.tick(60 * S);
+        assert!(!adv(&mut a, 4 * S));
+        assert!(adv(&mut a, 6 * S));
+        adv(&mut a, 60 * S);
         a.enter();
-        assert!(!a.tick(10 * S));
+        assert!(!adv(&mut a, 10 * S));
     }
 
     #[test]
@@ -262,14 +278,23 @@ mod tests {
     }
 
     #[test]
+    fn huge_tick_is_capped() {
+        let mut a = app();
+        a.toggle();
+        a.tick(Duration::from_secs(3600));
+        assert_eq!(a.phase, Phase::Work);
+        assert_eq!(a.remaining, 9 * S);
+    }
+
+    #[test]
     fn pause_stops_countdown() {
         let mut a = app();
-        a.tick(5 * S);
+        adv(&mut a, 5 * S);
         assert_eq!(a.remaining, 10 * S, "not started yet");
         a.toggle();
-        a.tick(2 * S);
+        adv(&mut a, 2 * S);
         a.toggle();
-        a.tick(5 * S);
+        adv(&mut a, 5 * S);
         assert_eq!(a.remaining, 8 * S);
     }
 
@@ -277,7 +302,7 @@ mod tests {
     fn reset_restores_initial_state() {
         let mut a = app();
         a.toggle();
-        a.tick(10 * S);
+        adv(&mut a, 10 * S);
         a.reset();
         assert_eq!(a.phase, Phase::Work);
         assert_eq!(a.completed, 0);
@@ -304,7 +329,7 @@ mod tests {
             let w = a.wheel.as_ref().unwrap();
             assert!(w.landed && w.pos < EXERCISES.len());
             let pos = w.pos;
-            a.tick(10 * S);
+            adv(&mut a, 10 * S);
             assert_eq!(a.wheel.as_ref().unwrap().pos, pos, "stays put");
             assert_eq!(a.result(), Some(EXERCISES[pos]));
         }
@@ -374,7 +399,7 @@ mod tests {
     fn enter_ignored_while_spinning() {
         let mut a = app();
         a.toggle();
-        a.tick(10 * S);
+        adv(&mut a, 10 * S);
         a.enter();
         assert_eq!(a.phase, Phase::Wheel);
     }
