@@ -1,3 +1,4 @@
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::time::Duration;
@@ -143,6 +144,21 @@ impl App {
             Phase::Break { long: false } => self.cfg.short,
             Phase::Break { long: true } => self.cfg.long,
             Phase::Wheel => Duration::ZERO,
+        }
+    }
+
+    pub fn on_key(&mut self, k: KeyEvent) {
+        if k.kind != KeyEventKind::Press {
+            return;
+        }
+        match k.code {
+            KeyCode::Char(' ') => self.toggle(),
+            KeyCode::Char('s') => self.skip(),
+            KeyCode::Char('r') => self.reset(),
+            KeyCode::Enter => self.enter(),
+            KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => self.quit = true,
+            KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
+            _ => {}
         }
     }
 
@@ -389,6 +405,48 @@ mod tests {
         adv(&mut a, 2 * S);
         assert_eq!(a.phase, Phase::Work);
         assert!(!a.running);
+    }
+
+    fn press(a: &mut App, code: KeyCode, mods: KeyModifiers) {
+        a.on_key(KeyEvent::new(code, mods));
+    }
+
+    #[test]
+    fn keys_drive_the_app() {
+        let mut a = app();
+        let none = KeyModifiers::NONE;
+        press(&mut a, KeyCode::Char(' '), none);
+        assert!(a.running);
+        press(&mut a, KeyCode::Char(' '), none);
+        assert!(!a.running);
+        press(&mut a, KeyCode::Char('s'), none);
+        assert_eq!(a.phase, Phase::Break { long: false });
+        press(&mut a, KeyCode::Char('r'), none);
+        assert_eq!(a.phase, Phase::Work);
+        press(&mut a, KeyCode::Char('x'), none);
+        assert!(!a.quit);
+        press(&mut a, KeyCode::Char('c'), none);
+        assert!(!a.quit, "plain c does not quit");
+        press(&mut a, KeyCode::Char('c'), KeyModifiers::CONTROL);
+        assert!(a.quit);
+    }
+
+    #[test]
+    fn q_and_esc_quit() {
+        for code in [KeyCode::Char('q'), KeyCode::Esc] {
+            let mut a = app();
+            press(&mut a, code, KeyModifiers::NONE);
+            assert!(a.quit);
+        }
+    }
+
+    #[test]
+    fn key_release_is_ignored() {
+        let mut a = app();
+        let mut ev = KeyEvent::new(KeyCode::Char('q'), KeyModifiers::NONE);
+        ev.kind = KeyEventKind::Release;
+        a.on_key(ev);
+        assert!(!a.quit);
     }
 
     #[test]

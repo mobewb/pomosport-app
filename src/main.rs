@@ -9,7 +9,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use clap::Parser;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::event::{self, Event};
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
@@ -110,19 +110,7 @@ fn run(
         terminal.draw(|f| ui::draw(f, app))?;
         if event::poll(Duration::from_millis(50))? {
             if let Event::Key(k) = event::read()? {
-                if k.kind == KeyEventKind::Press {
-                    match k.code {
-                        KeyCode::Char(' ') => app.toggle(),
-                        KeyCode::Char('s') => app.skip(),
-                        KeyCode::Char('r') => app.reset(),
-                        KeyCode::Enter => app.enter(),
-                        KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => {
-                            app.quit = true
-                        }
-                        KeyCode::Char('q') | KeyCode::Esc => app.quit = true,
-                        _ => {}
-                    }
-                }
+                app.on_key(k);
             }
         }
         let now = Instant::now();
