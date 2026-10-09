@@ -72,12 +72,13 @@ pub struct Settings {
     pub no_notify: bool,
 }
 
-/// Accepts finite minutes in (0, 1440]; rejects 0, negatives, NaN and inf.
+/// Accepts finite minutes from 1 millisecond up to 1440; rejects 0, negatives,
+/// NaN, inf and values that would make a zero-length phase.
 pub fn check_minutes(m: f64) -> Result<f64, String> {
-    if m.is_finite() && m > 0.0 && m <= 1440.0 {
+    if m.is_finite() && m * 60.0 >= 0.001 && m <= 1440.0 {
         Ok(m)
     } else {
-        Err("must be greater than 0 and at most 1440 minutes".into())
+        Err("must be at least 1 millisecond and at most 1440 minutes".into())
     }
 }
 

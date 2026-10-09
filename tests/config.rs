@@ -97,3 +97,9 @@ fn file_exercises_that_are_all_blank_or_too_many_are_rejected() {
     let nine = "exercises = [\"1\",\"2\",\"3\",\"4\",\"5\",\"6\",\"7\",\"8\",\"9\"]";
     assert!(resolve(cli(&[]), file(nine)).is_err());
 }
+
+#[test]
+fn file_durations_too_short_to_run_are_rejected() {
+    assert!(resolve(cli(&[]), file("work = 0.00001")).is_err());
+    assert!(resolve(cli(&[]), file("short = 0.001")).is_ok());
+}

@@ -9,10 +9,12 @@ fn exercises_parser_trims_and_bounds() {
 
 #[test]
 fn minutes_parser_accepts_only_sane_values() {
-    for ok in ["25", "0.1", "1440"] {
+    for ok in ["25", "0.1", "1440", "0.001"] {
         assert!(parse_minutes(ok).is_ok(), "{ok}");
     }
-    for bad in ["0", "-1", "NaN", "inf", "1441", "abc", ""] {
+    for bad in [
+        "0", "-1", "NaN", "inf", "1441", "abc", "", "0.00001", "1e-9",
+    ] {
         assert!(parse_minutes(bad).is_err(), "{bad}");
     }
 }
