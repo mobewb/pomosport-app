@@ -49,7 +49,13 @@ pub fn draw(f: &mut Frame, app: &App) {
 
     let secs = app.remaining.as_secs() + u64::from(app.remaining.subsec_nanos() > 0);
     let clock = format!("{:02}:{:02}", secs / 60, secs % 60);
-    f.render_widget(center(clock, bold), timer);
+    let status = match app.phase {
+        Phase::Wheel => "",
+        _ if app.running => "",
+        _ if app.remaining == app.phase_total() => "  ready",
+        _ => "  paused",
+    };
+    f.render_widget(center(format!("{clock}{status}"), bold), timer);
 
     let total = app.phase_total().as_secs_f64();
     let ratio = if total > 0.0 {
@@ -146,6 +152,19 @@ mod tests {
     #[test]
     fn hints_fit_the_box() {
         assert!(HINTS.len() <= usize::from(WIDTH));
+    }
+
+    #[test]
+    fn timer_shows_paused_after_pause() {
+        let mut t = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let mut app = App::new(Config::default());
+        app.toggle();
+        app.tick(std::time::Duration::from_secs(1));
+        t.draw(|f| draw(f, &app)).unwrap();
+        assert!(!t.backend().to_string().contains("paused"));
+        app.toggle();
+        t.draw(|f| draw(f, &app)).unwrap();
+        assert!(t.backend().to_string().contains("24:59  paused"));
     }
 
     #[test]
