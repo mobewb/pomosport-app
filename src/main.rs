@@ -34,18 +34,41 @@ fn minutes(m: f64) -> Duration {
     Duration::from_secs_f64((m * 60.0).max(0.0))
 }
 
+const ICON: &[u8] = include_bytes!("../assets/icon.png");
+const MESSAGE: &str = "Time for an exercise!";
+
+/// Write the embedded icon to the temp dir so terminal-notifier can read it.
+fn icon_path() -> Option<std::path::PathBuf> {
+    let path = std::env::temp_dir().join("pomosport-icon.png");
+    std::fs::write(&path, ICON).ok()?;
+    Some(path)
+}
+
 /// Terminal bell plus a macOS notification; failures are ignored.
+/// Uses `terminal-notifier` (custom icon) when installed, else `osascript`.
 fn notify() {
     let _ = io::stdout().write_all(b"\x07");
     let _ = io::stdout().flush();
-    let _ = Command::new("osascript")
-        .args([
-            "-e",
-            "display notification \"Time for an exercise!\" with title \"pomosport\"",
-        ])
+    let mut tn = Command::new("terminal-notifier");
+    tn.args(["-title", "pomosport", "-message", MESSAGE]);
+    if let Some(icon) = icon_path() {
+        tn.arg("-appIcon").arg(icon);
+    }
+    let sent = tn
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .spawn();
+        .spawn()
+        .is_ok();
+    if !sent {
+        let _ = Command::new("osascript")
+            .args([
+                "-e",
+                &format!("display notification \"{MESSAGE}\" with title \"pomosport\""),
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
+    }
 }
 
 const MAX_CLACKS: usize = 8;
