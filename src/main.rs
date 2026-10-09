@@ -131,6 +131,16 @@ impl Drop for TermGuard {
 
 fn main() -> io::Result<()> {
     let cli = Cli::parse();
+    if cli.command.is_some() {
+        let entries = history::default_path()
+            .map(|p| history::load(&p))
+            .unwrap_or_default();
+        print!(
+            "{}",
+            history::render(&history::summarize(&entries, history::now()))
+        );
+        return Ok(());
+    }
     let file = match config::default_path() {
         Some(path) => config::load(&path),
         None => Ok(FileConfig::default()),

@@ -9,6 +9,8 @@ use crate::app::Config;
 #[derive(Parser)]
 #[command(about = "Pomodoro timer with an exercise wheel")]
 pub struct Cli {
+    #[command(subcommand)]
+    pub command: Option<Command>,
     /// Work session length in minutes [default: 25]
     #[arg(long, value_parser = parse_minutes)]
     work: Option<f64>,
@@ -33,6 +35,12 @@ pub struct Cli {
     /// Disable desktop notifications
     #[arg(long)]
     no_notify: bool,
+}
+
+#[derive(clap::Subcommand)]
+pub enum Command {
+    /// Show completed-session statistics from the history file
+    Stats,
 }
 
 /// Settings from `~/.config/pomosport/config.toml`; the command line overrides them.
