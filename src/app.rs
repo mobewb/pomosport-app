@@ -67,6 +67,7 @@ pub struct App {
     pub wheel: Option<Wheel>,
     /// Highlight steps since the last `take_clacks`.
     clacks: u32,
+    landed_event: bool,
     rng: StdRng,
 }
 
@@ -85,6 +86,7 @@ impl App {
             quit: false,
             wheel: None,
             clacks: 0,
+            landed_event: false,
             rng: StdRng::seed_from_u64(seed),
         }
     }
@@ -133,6 +135,11 @@ impl App {
         std::mem::take(&mut self.clacks)
     }
 
+    /// True once, right after the wheel stops on its result.
+    pub fn take_wheel_landed(&mut self) -> bool {
+        std::mem::take(&mut self.landed_event)
+    }
+
     /// The exercise the wheel landed on, once it has stopped.
     pub fn result(&self) -> Option<&'static str> {
         self.wheel
@@ -144,7 +151,9 @@ impl App {
     /// Advance time; returns true when a work session just ended on its own.
     pub fn tick(&mut self, dt: Duration) -> bool {
         if let Some(w) = self.wheel.as_mut() {
+            let was_landed = w.landed;
             self.clacks += w.advance(dt);
+            self.landed_event |= w.landed && !was_landed;
         }
         if !self.running || self.phase == Phase::Wheel {
             return false;
@@ -332,6 +341,18 @@ mod tests {
         a.toggle();
         a.tick(S);
         a
+    }
+
+    #[test]
+    fn wheel_landed_fires_exactly_once() {
+        let mut a = spun_app(9);
+        assert!(!a.take_wheel_landed());
+        let mut fired = 0;
+        for _ in 0..400 {
+            a.tick(Duration::from_millis(50));
+            fired += u32::from(a.take_wheel_landed());
+        }
+        assert_eq!(fired, 1);
     }
 
     #[test]

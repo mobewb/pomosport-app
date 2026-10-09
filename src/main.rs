@@ -68,6 +68,16 @@ fn clack(playing: &mut Vec<Child>, steps: u32) {
     }
 }
 
+/// Win jingle when the wheel lands. Fire and forget; it plays alongside any
+/// clack still ringing. To mute, make this function return early.
+fn win() {
+    let _ = Command::new("afplay")
+        .arg("/System/Library/Sounds/Hero.aiff")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn();
+}
+
 fn restore() {
     let _ = disable_raw_mode();
     let _ = io::stdout().execute(LeaveAlternateScreen);
@@ -120,6 +130,9 @@ fn run(terminal: &mut Terminal<CrosstermBackend<io::Stdout>>, app: &mut App) -> 
         }
         last = now;
         clack(&mut playing, app.take_clacks());
+        if app.take_wheel_landed() {
+            win();
+        }
     }
     Ok(())
 }
