@@ -179,6 +179,27 @@ mod tests {
     }
 
     #[test]
+    fn wheel_view_spins_then_shows_result() {
+        let sec = std::time::Duration::from_secs(1);
+        let mut t = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let mut app = App::new(Config {
+            work: sec,
+            ..Config::default()
+        });
+        app.toggle();
+        app.tick(sec);
+        t.draw(|f| draw(f, &app)).unwrap();
+        let out = t.backend().to_string();
+        assert!(out.contains("EXERCISE TIME") && out.contains("Spinning"));
+        assert!(out.contains("20 squats"));
+        for _ in 0..70 {
+            app.tick(sec / 10);
+        }
+        t.draw(|f| draw(f, &app)).unwrap();
+        assert!(t.backend().to_string().contains("Enter to start break"));
+    }
+
+    #[test]
     fn small_terminal_shows_message() {
         assert!(render(30, 10).contains("Terminal too small"));
     }

@@ -450,6 +450,27 @@ mod tests {
     }
 
     #[test]
+    fn skip_on_wheel_waits_for_landing() {
+        let mut a = spun_app(4);
+        a.skip();
+        assert_eq!(a.phase, Phase::Wheel, "still spinning");
+        adv(&mut a, 60 * S);
+        a.skip();
+        assert_eq!(a.phase, Phase::Break { long: false });
+        assert!(a.wheel.is_none());
+    }
+
+    #[test]
+    fn skip_from_break_returns_to_work() {
+        let mut a = app();
+        a.skip();
+        a.skip();
+        assert_eq!(a.phase, Phase::Work);
+        assert_eq!(a.remaining, a.cfg.work);
+        assert!(!a.running);
+    }
+
+    #[test]
     fn pause_stops_countdown() {
         let mut a = app();
         adv(&mut a, 5 * S);
