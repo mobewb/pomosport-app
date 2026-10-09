@@ -1,27 +1,45 @@
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::time::Duration;
 
-pub const EXERCISES: [&str; 4] = ["10 push-ups", "20 squats", "10 crunches", "5 burpees"];
+pub const DEFAULT_EXERCISES: [&str; 4] = ["10 push-ups", "20 squats", "10 crunches", "5 burpees"];
+
+/// Longest time step applied in one tick, so a laptop sleep can't jump the timer.
+const MAX_DT: Duration = Duration::from_secs(1);
 
 /// State of the spinning wheel; each step takes longer than the last.
 pub struct Wheel {
     pub pos: usize,
     pub landed: bool,
+    len: usize,
     steps_done: u32,
     steps_total: u32,
     acc: Duration,
 }
 
 impl Wheel {
-    fn new(rng: &mut StdRng) -> Self {
+    fn new(rng: &mut StdRng, len: usize) -> Self {
         Self {
-            pos: rng.gen_range(0..EXERCISES.len()),
+            pos: rng.gen_range(0..len),
             landed: false,
+            len,
             steps_done: 0,
             steps_total: rng.gen_range(24..40),
             acc: Duration::ZERO,
         }
+    }
+
+    /// Where the spin will stop (or has stopped).
+    fn final_pos(&self) -> usize {
+        (self.pos + (self.steps_total - self.steps_done) as usize) % self.len
+    }
+
+    /// Jump to the final position the spin was heading for.
+    fn land(&mut self) {
+        self.pos = self.final_pos();
+        self.steps_done = self.steps_total;
+        self.landed = true;
     }
 
     /// Advance the spin; returns how many highlight steps were taken.
@@ -34,7 +52,7 @@ impl Wheel {
                 break;
             }
             self.acc -= interval;
-            self.pos = (self.pos + 1) % EXERCISES.len();
+            self.pos = (self.pos + 1) % self.len;
             self.steps_done += 1;
             self.landed = self.steps_done >= self.steps_total;
         }
@@ -49,11 +67,29 @@ pub enum Phase {
     Break { long: bool },
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Config {
     pub work: Duration,
     pub short: Duration,
     pub long: Duration,
+    /// Work sessions per cycle; the break after the last one is long.
+    pub cycles: u32,
+    pub exercises: Vec<String>,
+    /// Start timers without pressing Space (work after a break, and at launch).
+    pub auto_start: bool,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            work: Duration::from_secs(25 * 60),
+            short: Duration::from_secs(5 * 60),
+            long: Duration::from_secs(15 * 60),
+            cycles: 4,
+            exercises: DEFAULT_EXERCISES.map(String::from).to_vec(),
+            auto_start: false,
+        }
+    }
 }
 
 pub struct App {
@@ -63,11 +99,16 @@ pub struct App {
     pub running: bool,
     /// Work sessions completed so far.
     pub completed: u32,
+    /// Sessions completed in the last 24 hours, across runs (set by the caller).
+    pub today: u32,
     pub quit: bool,
     pub wheel: Option<Wheel>,
+    /// False while the wheel runs for a skipped session: not counted, not logged.
+    counts: bool,
     /// Highlight steps since the last `take_clacks`.
     clacks: u32,
     landed_event: bool,
+    break_ended_event: bool,
     rng: StdRng,
 }
 
@@ -78,17 +119,45 @@ impl App {
 
     pub fn with_seed(cfg: Config, seed: u64) -> Self {
         Self {
-            cfg,
             phase: Phase::Work,
             remaining: cfg.work,
-            running: false,
+            running: cfg.auto_start,
             completed: 0,
+            today: 0,
             quit: false,
             wheel: None,
+            counts: true,
             clacks: 0,
             landed_event: false,
+            break_ended_event: false,
             rng: StdRng::seed_from_u64(seed),
+            cfg,
         }
+    }
+
+    /// Sessions filled in the current cycle (a full cycle stays full until the
+    /// next work session starts).
+    pub fn cycle_progress(&self) -> u32 {
+        let n = self.completed % self.cfg.cycles;
+        if n == 0 && self.completed > 0 && self.phase != Phase::Work {
+            self.cfg.cycles
+        } else {
+            n
+        }
+    }
+
+    /// Whether the next break will be the long one.
+    pub fn next_break_long(&self) -> bool {
+        match self.phase {
+            Phase::Work => self.long_break_after(self.completed + 1, true),
+            _ => self.long_break_after(self.completed, self.counts),
+        }
+    }
+
+    /// The one rule for long breaks, shared by the hint and the real break:
+    /// every `cycles`-th counted session, never after a skipped one.
+    fn long_break_after(&self, completed: u32, counts: bool) -> bool {
+        counts && completed > 0 && completed.is_multiple_of(self.cfg.cycles)
     }
 
     /// Total length of the current timed phase (0 during the wheel).
@@ -101,6 +170,21 @@ impl App {
         }
     }
 
+    pub fn on_key(&mut self, k: KeyEvent) {
+        if k.kind != KeyEventKind::Press {
+            return;
+        }
+        match k.code {
+            KeyCode::Char(' ') => self.toggle(),
+            KeyCode::Char('s') => self.skip(),
+            KeyCode::Char('r') => self.reset(),
+            KeyCode::Enter => self.enter(),
+            KeyCode::Char('c') if k.modifiers.contains(KeyModifiers::CONTROL) => self.quit = true,
+            KeyCode::Char('q') | KeyCode::Esc => self.quit = true,
+            _ => {}
+        }
+    }
+
     pub fn toggle(&mut self) {
         if self.phase != Phase::Wheel {
             self.running = !self.running;
@@ -109,13 +193,23 @@ impl App {
 
     pub fn reset(&mut self) {
         let seed = self.rng.gen();
-        *self = Self::with_seed(self.cfg, seed);
+        let today = self.today;
+        *self = Self::with_seed(self.cfg.clone(), seed);
+        self.today = today;
     }
 
     pub fn skip(&mut self) {
         match self.phase {
-            Phase::Work => self.finish_work(),
-            Phase::Wheel => self.enter(),
+            // A skipped session still spins the wheel but does not count.
+            Phase::Work => self.start_wheel(false),
+            // First press lands a spinning wheel (same result, no more clacks).
+            Phase::Wheel => match self.wheel.as_mut().filter(|w| !w.landed) {
+                Some(w) => {
+                    w.land();
+                    self.landed_event = true;
+                }
+                None => self.enter(),
+            },
             Phase::Break { .. } => self.start_work(),
         }
     }
@@ -123,16 +217,26 @@ impl App {
     /// Continue from the wheel to the break.
     pub fn enter(&mut self) {
         if self.phase == Phase::Wheel && self.wheel.as_ref().is_some_and(|w| w.landed) {
-            let long = self.completed.is_multiple_of(4);
-            self.phase = Phase::Break { long };
-            self.remaining = if long { self.cfg.long } else { self.cfg.short };
-            self.running = true;
-            self.wheel = None;
+            self.start_break();
         }
+    }
+
+    fn start_break(&mut self) {
+        let long = self.long_break_after(self.completed, self.counts);
+        self.phase = Phase::Break { long };
+        self.remaining = if long { self.cfg.long } else { self.cfg.short };
+        self.running = true;
+        self.wheel = None;
     }
 
     pub fn take_clacks(&mut self) -> u32 {
         std::mem::take(&mut self.clacks)
+    }
+
+    /// Whether the current wheel belongs to a completed session (so it is
+    /// logged), as opposed to a skipped one.
+    pub fn session_counts(&self) -> bool {
+        self.counts
     }
 
     /// True once, right after the wheel stops on its result.
@@ -140,16 +244,29 @@ impl App {
         std::mem::take(&mut self.landed_event)
     }
 
+    /// True once, right after a break runs out on its own.
+    pub fn take_break_ended(&mut self) -> bool {
+        std::mem::take(&mut self.break_ended_event)
+    }
+
+    /// The exercise the wheel is heading for (already decided while it spins),
+    /// so a finished session can be logged before the wheel stops.
+    pub fn pending_exercise(&self) -> Option<&str> {
+        let w = self.wheel.as_ref()?;
+        Some(self.cfg.exercises[w.final_pos()].as_str())
+    }
+
     /// The exercise the wheel landed on, once it has stopped.
-    pub fn result(&self) -> Option<&'static str> {
+    pub fn result(&self) -> Option<&str> {
         self.wheel
             .as_ref()
             .filter(|w| w.landed)
-            .map(|w| EXERCISES[w.pos])
+            .map(|w| self.cfg.exercises[w.pos].as_str())
     }
 
     /// Advance time; returns true when a work session just ended on its own.
     pub fn tick(&mut self, dt: Duration) -> bool {
+        let dt = dt.min(MAX_DT);
         if let Some(w) = self.wheel.as_mut() {
             let was_landed = w.landed;
             self.clacks += w.advance(dt);
@@ -164,6 +281,7 @@ impl App {
                 self.finish_work();
                 return true;
             }
+            self.break_ended_event = true;
             self.start_work();
         }
         false
@@ -171,196 +289,20 @@ impl App {
 
     fn finish_work(&mut self) {
         self.completed += 1;
+        self.start_wheel(true);
+    }
+
+    fn start_wheel(&mut self, counts: bool) {
+        self.counts = counts;
         self.phase = Phase::Wheel;
         self.running = false;
         self.remaining = Duration::ZERO;
-        self.wheel = Some(Wheel::new(&mut self.rng));
+        self.wheel = Some(Wheel::new(&mut self.rng, self.cfg.exercises.len()));
     }
 
     fn start_work(&mut self) {
         self.phase = Phase::Work;
         self.remaining = self.cfg.work;
-        self.running = false;
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const S: Duration = Duration::from_secs(1);
-
-    fn app() -> App {
-        App::new(Config {
-            work: 10 * S,
-            short: 3 * S,
-            long: 6 * S,
-        })
-    }
-
-    #[test]
-    fn work_expires_into_wheel_then_short_break() {
-        let mut a = app();
-        a.toggle();
-        a.tick(10 * S);
-        assert_eq!(a.phase, Phase::Wheel);
-        assert_eq!(a.completed, 1);
-        a.tick(60 * S);
-        a.enter();
-        assert_eq!(a.phase, Phase::Break { long: false });
-        assert_eq!(a.remaining, 3 * S);
-    }
-
-    #[test]
-    fn fourth_break_is_long() {
-        let mut a = app();
-        for i in 1..=4 {
-            a.toggle();
-            a.tick(10 * S);
-            a.tick(60 * S);
-            a.enter();
-            assert_eq!(a.phase, Phase::Break { long: i == 4 });
-            a.tick(10 * S);
-            assert_eq!(a.phase, Phase::Work);
-        }
-    }
-
-    #[test]
-    fn timer_counts_down_and_expires() {
-        let mut a = app();
-        a.toggle();
-        a.tick(4 * S);
-        assert_eq!(a.remaining, 6 * S);
-        a.tick(6 * S);
-        assert_eq!(a.phase, Phase::Wheel);
-    }
-
-    #[test]
-    fn tick_reports_work_end_only() {
-        let mut a = app();
-        a.toggle();
-        assert!(!a.tick(4 * S));
-        assert!(a.tick(6 * S));
-        a.tick(60 * S);
-        a.enter();
-        assert!(!a.tick(10 * S));
-    }
-
-    #[test]
-    fn pause_stops_countdown() {
-        let mut a = app();
-        a.tick(5 * S);
-        assert_eq!(a.remaining, 10 * S, "not started yet");
-        a.toggle();
-        a.tick(2 * S);
-        a.toggle();
-        a.tick(5 * S);
-        assert_eq!(a.remaining, 8 * S);
-    }
-
-    #[test]
-    fn reset_restores_initial_state() {
-        let mut a = app();
-        a.toggle();
-        a.tick(10 * S);
-        a.reset();
-        assert_eq!(a.phase, Phase::Work);
-        assert_eq!(a.completed, 0);
-        assert!(!a.running);
-    }
-
-    #[test]
-    fn wheel_lands_on_valid_index_and_stops() {
-        for seed in 0..50 {
-            let mut a = App::with_seed(
-                Config {
-                    work: S,
-                    short: S,
-                    long: S,
-                },
-                seed,
-            );
-            a.toggle();
-            a.tick(S);
-            assert!(a.result().is_none());
-            for _ in 0..1000 {
-                a.tick(Duration::from_millis(50));
-            }
-            let w = a.wheel.as_ref().unwrap();
-            assert!(w.landed && w.pos < EXERCISES.len());
-            let pos = w.pos;
-            a.tick(10 * S);
-            assert_eq!(a.wheel.as_ref().unwrap().pos, pos, "stays put");
-            assert_eq!(a.result(), Some(EXERCISES[pos]));
-        }
-    }
-
-    #[test]
-    fn clacks_equal_highlight_steps() {
-        for (seed, step_ms) in [(1, 10), (2, 50), (3, 333)] {
-            let mut a = App::with_seed(
-                Config {
-                    work: S,
-                    short: S,
-                    long: S,
-                },
-                seed,
-            );
-            a.toggle();
-            a.tick(S);
-            let start = a.wheel.as_ref().unwrap().pos;
-            let mut seen = 0;
-            for _ in 0..(30_000 / step_ms) {
-                a.tick(Duration::from_millis(step_ms));
-                seen += a.take_clacks();
-            }
-            let w = a.wheel.as_ref().unwrap();
-            assert!(w.landed);
-            assert!((24..40).contains(&seen));
-            assert_eq!(w.pos, (start + seen as usize) % EXERCISES.len());
-            assert_eq!(a.take_clacks(), 0);
-        }
-    }
-
-    #[test]
-    fn one_tick_can_yield_several_clacks() {
-        let mut a = spun_app(5);
-        a.tick(Duration::from_millis(300));
-        assert!(a.take_clacks() > 1);
-    }
-
-    fn spun_app(seed: u64) -> App {
-        let mut a = App::with_seed(
-            Config {
-                work: S,
-                short: S,
-                long: S,
-            },
-            seed,
-        );
-        a.toggle();
-        a.tick(S);
-        a
-    }
-
-    #[test]
-    fn wheel_landed_fires_exactly_once() {
-        let mut a = spun_app(9);
-        assert!(!a.take_wheel_landed());
-        let mut fired = 0;
-        for _ in 0..400 {
-            a.tick(Duration::from_millis(50));
-            fired += u32::from(a.take_wheel_landed());
-        }
-        assert_eq!(fired, 1);
-    }
-
-    #[test]
-    fn enter_ignored_while_spinning() {
-        let mut a = app();
-        a.toggle();
-        a.tick(10 * S);
-        a.enter();
-        assert_eq!(a.phase, Phase::Wheel);
+        self.running = self.cfg.auto_start;
     }
 }

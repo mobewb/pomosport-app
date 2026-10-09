@@ -1,13 +1,31 @@
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Gauge, Paragraph};
+use ratatui::widgets::{Block, Borders, Gauge, Paragraph, Wrap};
 use ratatui::Frame;
 
-use crate::app::{App, Phase, EXERCISES};
+use crate::app::{App, Phase};
+
+const WIDTH: u16 = 60;
+const HEIGHT: u16 = 18;
+const HINTS: &str = "Space start/pause  s skip  r reset  Enter continue  q quit";
 
 pub fn draw(f: &mut Frame, app: &App) {
-    let area = centered(f.area(), 50, 18);
+    let full = f.area();
+    if full.width < WIDTH || full.height < HEIGHT {
+        let msg = format!(
+            "Terminal too small: need {WIDTH}x{HEIGHT}, have {}x{}",
+            full.width, full.height
+        );
+        f.render_widget(
+            Paragraph::new(msg)
+                .wrap(Wrap { trim: true })
+                .alignment(Alignment::Center),
+            full,
+        );
+        return;
+    }
+    let area = centered(full, WIDTH, HEIGHT);
     let [title, timer, gauge, count, body, footer] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(2),
@@ -31,7 +49,13 @@ pub fn draw(f: &mut Frame, app: &App) {
 
     let secs = app.remaining.as_secs() + u64::from(app.remaining.subsec_nanos() > 0);
     let clock = format!("{:02}:{:02}", secs / 60, secs % 60);
-    f.render_widget(center(clock, bold), timer);
+    let status = match app.phase {
+        Phase::Wheel => "",
+        _ if app.running => "",
+        _ if app.remaining == app.phase_total() => "  ready",
+        _ => "  paused",
+    };
+    f.render_widget(center(format!("{clock}{status}"), bold), timer);
 
     let total = app.phase_total().as_secs_f64();
     let ratio = if total > 0.0 {
@@ -47,21 +71,34 @@ pub fn draw(f: &mut Frame, app: &App) {
         gauge,
     );
 
-    let state = if app.phase != Phase::Wheel && !app.running {
-        " (paused)"
+    let done = app.cycle_progress() as usize;
+    let dots: String = (0..app.cfg.cycles as usize)
+        .map(|i| if i < done { '●' } else { '○' })
+        .collect();
+    let next = if matches!(app.phase, Phase::Break { .. }) {
+        String::new()
     } else {
-        ""
+        format!(
+            "  next: {} break",
+            if app.next_break_long() {
+                "long"
+            } else {
+                "short"
+            }
+        )
     };
     f.render_widget(
         center(
-            format!("Sessions completed: {}{state}", app.completed),
+            format!("{dots}  today: {}{next}", app.today),
             Style::default(),
         ),
         count,
     );
 
     if let Some(w) = &app.wheel {
-        let mut lines: Vec<Line> = EXERCISES
+        let mut lines: Vec<Line> = app
+            .cfg
+            .exercises
             .iter()
             .enumerate()
             .map(|(i, e)| {
@@ -83,9 +120,8 @@ pub fn draw(f: &mut Frame, app: &App) {
         f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), body);
     }
 
-    let hints = "Space start/pause  s skip  r reset  Enter continue  q quit";
     f.render_widget(
-        center(hints.into(), Style::default().fg(Color::DarkGray)),
+        center(HINTS.into(), Style::default().fg(Color::DarkGray)),
         footer,
     );
 }
@@ -99,4 +135,15 @@ fn centered(area: Rect, w: u16, h: u16) -> Rect {
         w,
         h,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Inline: needs the private layout constants.
+    #[test]
+    fn hints_fit_the_box() {
+        assert!(HINTS.len() <= usize::from(WIDTH));
+    }
 }
