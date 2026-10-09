@@ -89,7 +89,7 @@ pub fn draw(f: &mut Frame, app: &App) {
     };
     f.render_widget(
         center(
-            format!("{dots}  sessions: {}{next}", app.completed),
+            format!("{dots}  today: {}{next}", app.today),
             Style::default(),
         ),
         count,
@@ -167,6 +167,15 @@ mod tests {
         app.toggle();
         t.draw(|f| draw(f, &app)).unwrap();
         assert!(t.backend().to_string().contains("24:59  paused"));
+    }
+
+    #[test]
+    fn shows_today_count() {
+        let mut t = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        let mut app = App::new(Config::default());
+        app.today = 7;
+        t.draw(|f| draw(f, &app)).unwrap();
+        assert!(t.backend().to_string().contains("today: 7"));
     }
 
     #[test]

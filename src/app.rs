@@ -86,6 +86,8 @@ pub struct App {
     pub running: bool,
     /// Work sessions completed so far.
     pub completed: u32,
+    /// Sessions completed in the last 24 hours, across runs (set by the caller).
+    pub today: u32,
     pub quit: bool,
     pub wheel: Option<Wheel>,
     /// Highlight steps since the last `take_clacks`.
@@ -106,6 +108,7 @@ impl App {
             remaining: cfg.work,
             running: cfg.auto_start,
             completed: 0,
+            today: 0,
             quit: false,
             wheel: None,
             clacks: 0,
@@ -151,7 +154,9 @@ impl App {
 
     pub fn reset(&mut self) {
         let seed = self.rng.gen();
+        let today = self.today;
         *self = Self::with_seed(self.cfg.clone(), seed);
+        self.today = today;
     }
 
     pub fn skip(&mut self) {
@@ -403,7 +408,9 @@ mod tests {
         let mut a = app();
         a.toggle();
         adv(&mut a, 10 * S);
+        a.today = 3;
         a.reset();
+        assert_eq!(a.today, 3, "today survives reset");
         assert_eq!(a.phase, Phase::Work);
         assert_eq!(a.completed, 0);
         assert!(!a.running);

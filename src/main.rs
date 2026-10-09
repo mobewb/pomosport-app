@@ -155,6 +155,9 @@ fn main() -> io::Result<()> {
     let (mute, no_notify) = (settings.mute, settings.no_notify);
     let history_path = history::default_path();
     let mut app = App::new(settings.config);
+    if let Some(path) = &history_path {
+        app.today = history::summarize(&history::load(path), history::now()).today;
+    }
 
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -228,6 +231,7 @@ fn run(
         let landed = app.take_wheel_landed();
         if landed {
             record(app, history_path);
+            app.today += 1;
         }
         if !mute {
             clack(&mut playing, clacks);
