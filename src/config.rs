@@ -72,7 +72,7 @@ pub fn check_minutes(m: f64) -> Result<f64, String> {
     }
 }
 
-fn parse_minutes(s: &str) -> Result<f64, String> {
+pub fn parse_minutes(s: &str) -> Result<f64, String> {
     check_minutes(s.parse().map_err(|_| format!("`{s}` is not a number"))?)
 }
 
@@ -85,7 +85,7 @@ fn check_exercises(list: Vec<String>) -> Result<Vec<String>, String> {
 }
 
 /// Splits a comma-separated list, ignoring blanks; 1 to 8 entries fit the wheel.
-fn parse_exercises(s: &str) -> Result<Vec<String>, String> {
+pub fn parse_exercises(s: &str) -> Result<Vec<String>, String> {
     check_exercises(
         s.split(',')
             .map(str::trim)

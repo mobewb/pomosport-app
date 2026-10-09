@@ -1,9 +1,3 @@
-mod app;
-mod config;
-mod history;
-mod platform;
-mod ui;
-
 use std::io;
 use std::path::Path;
 use std::time::{Duration, Instant};
@@ -17,9 +11,10 @@ use crossterm::{execute, ExecutableCommand};
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
-use app::App;
-use config::{Cli, FileConfig};
-use platform::{clack, notify, win, BREAK_DONE, WORK_DONE};
+use pomosport::app::App;
+use pomosport::config::{self, Cli, FileConfig};
+use pomosport::platform::{clack, notify, win, BREAK_DONE, WORK_DONE};
+use pomosport::{history, ui};
 
 fn restore() {
     let _ = disable_raw_mode();
