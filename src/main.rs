@@ -22,13 +22,13 @@ use app::{App, Config};
 #[command(about = "Pomodoro timer with an exercise wheel")]
 struct Cli {
     /// Work session length in minutes
-    #[arg(long, default_value_t = 25.0)]
+    #[arg(long, value_parser = parse_minutes, default_value_t = 25.0)]
     work: f64,
     /// Short break length in minutes
-    #[arg(long, default_value_t = 5.0)]
+    #[arg(long, value_parser = parse_minutes, default_value_t = 5.0)]
     short: f64,
     /// Long break length in minutes
-    #[arg(long, default_value_t = 15.0)]
+    #[arg(long, value_parser = parse_minutes, default_value_t = 15.0)]
     long: f64,
     /// Disable all sounds (clacks, fanfare, bell)
     #[arg(long)]
@@ -36,6 +36,16 @@ struct Cli {
     /// Disable desktop notifications
     #[arg(long)]
     no_notify: bool,
+}
+
+/// Accepts finite minutes in (0, 1440]; rejects 0, negatives, NaN and inf.
+fn parse_minutes(s: &str) -> Result<f64, String> {
+    let m: f64 = s.parse().map_err(|_| format!("`{s}` is not a number"))?;
+    if m.is_finite() && m > 0.0 && m <= 1440.0 {
+        Ok(m)
+    } else {
+        Err("must be greater than 0 and at most 1440 minutes".into())
+    }
 }
 
 fn minutes(m: f64) -> Duration {
@@ -211,4 +221,19 @@ fn run(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn minutes_parser_accepts_only_sane_values() {
+        for ok in ["25", "0.1", "1440"] {
+            assert!(parse_minutes(ok).is_ok(), "{ok}");
+        }
+        for bad in ["0", "-1", "NaN", "inf", "1441", "abc", ""] {
+            assert!(parse_minutes(bad).is_err(), "{bad}");
+        }
+    }
 }
