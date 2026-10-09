@@ -59,6 +59,16 @@ pub struct Config {
     pub long: Duration,
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            work: Duration::from_secs(25 * 60),
+            short: Duration::from_secs(5 * 60),
+            long: Duration::from_secs(15 * 60),
+        }
+    }
+}
+
 pub struct App {
     pub cfg: Config,
     pub phase: Phase,

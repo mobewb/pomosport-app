@@ -1,13 +1,31 @@
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Line;
-use ratatui::widgets::{Block, Borders, Gauge, Paragraph};
+use ratatui::widgets::{Block, Borders, Gauge, Paragraph, Wrap};
 use ratatui::Frame;
 
 use crate::app::{App, Phase, EXERCISES};
 
+const WIDTH: u16 = 60;
+const HEIGHT: u16 = 18;
+const HINTS: &str = "Space start/pause  s skip  r reset  Enter continue  q quit";
+
 pub fn draw(f: &mut Frame, app: &App) {
-    let area = centered(f.area(), 50, 18);
+    let full = f.area();
+    if full.width < WIDTH || full.height < HEIGHT {
+        let msg = format!(
+            "Terminal too small: need {WIDTH}x{HEIGHT}, have {}x{}",
+            full.width, full.height
+        );
+        f.render_widget(
+            Paragraph::new(msg)
+                .wrap(Wrap { trim: true })
+                .alignment(Alignment::Center),
+            full,
+        );
+        return;
+    }
+    let area = centered(full, WIDTH, HEIGHT);
     let [title, timer, gauge, count, body, footer] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(2),
@@ -83,9 +101,8 @@ pub fn draw(f: &mut Frame, app: &App) {
         f.render_widget(Paragraph::new(lines).alignment(Alignment::Center), body);
     }
 
-    let hints = "Space start/pause  s skip  r reset  Enter continue  q quit";
     f.render_widget(
-        center(hints.into(), Style::default().fg(Color::DarkGray)),
+        center(HINTS.into(), Style::default().fg(Color::DarkGray)),
         footer,
     );
 }
@@ -99,4 +116,35 @@ fn centered(area: Rect, w: u16, h: u16) -> Rect {
         w,
         h,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::Config;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    fn render(w: u16, h: u16) -> String {
+        let mut t = Terminal::new(TestBackend::new(w, h)).unwrap();
+        let app = App::new(Config::default());
+        t.draw(|f| draw(f, &app)).unwrap();
+        t.backend().to_string()
+    }
+
+    #[test]
+    fn hints_fit_the_box() {
+        assert!(HINTS.len() <= usize::from(WIDTH));
+    }
+
+    #[test]
+    fn small_terminal_shows_message() {
+        assert!(render(30, 10).contains("Terminal too small"));
+    }
+
+    #[test]
+    fn normal_terminal_shows_timer_and_hints() {
+        let out = render(80, 24);
+        assert!(out.contains("25:00") && out.contains("q quit"));
+    }
 }
