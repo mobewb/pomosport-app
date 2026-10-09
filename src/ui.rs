@@ -4,7 +4,7 @@ use ratatui::text::Line;
 use ratatui::widgets::{Block, Borders, Gauge, Paragraph, Wrap};
 use ratatui::Frame;
 
-use crate::app::{App, Phase, EXERCISES};
+use crate::app::{App, Phase};
 
 const WIDTH: u16 = 60;
 const HEIGHT: u16 = 18;
@@ -96,7 +96,9 @@ pub fn draw(f: &mut Frame, app: &App) {
     );
 
     if let Some(w) = &app.wheel {
-        let mut lines: Vec<Line> = EXERCISES
+        let mut lines: Vec<Line> = app
+            .cfg
+            .exercises
             .iter()
             .enumerate()
             .map(|(i, e)| {

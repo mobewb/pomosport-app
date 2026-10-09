@@ -33,6 +33,9 @@ struct Cli {
     /// Work sessions before a long break
     #[arg(long, value_parser = clap::value_parser!(u32).range(1..=99), default_value_t = 4)]
     cycles: u32,
+    /// Comma-separated exercises for the wheel (1 to 8)
+    #[arg(long, value_parser = parse_exercises)]
+    exercises: Option<Vec<String>>,
     /// Disable all sounds (clacks, fanfare, bell)
     #[arg(long)]
     mute: bool,
@@ -48,6 +51,21 @@ fn parse_minutes(s: &str) -> Result<f64, String> {
         Ok(m)
     } else {
         Err("must be greater than 0 and at most 1440 minutes".into())
+    }
+}
+
+/// Splits a comma-separated list, ignoring blanks; 1 to 8 entries fit the wheel.
+fn parse_exercises(s: &str) -> Result<Vec<String>, String> {
+    let list: Vec<String> = s
+        .split(',')
+        .map(str::trim)
+        .filter(|e| !e.is_empty())
+        .map(String::from)
+        .collect();
+    if (1..=8).contains(&list.len()) {
+        Ok(list)
+    } else {
+        Err("give between 1 and 8 comma-separated exercises".into())
     }
 }
 
@@ -170,6 +188,7 @@ fn main() -> io::Result<()> {
         short: minutes(cli.short),
         long: minutes(cli.long),
         cycles: cli.cycles,
+        exercises: cli.exercises.unwrap_or(Config::default().exercises),
     });
 
     let default_hook = std::panic::take_hook();
@@ -233,6 +252,13 @@ fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn exercises_parser_trims_and_bounds() {
+        assert_eq!(parse_exercises(" 5 a , ,b ").unwrap(), ["5 a", "b"]);
+        assert!(parse_exercises(" , ").is_err());
+        assert!(parse_exercises("1,2,3,4,5,6,7,8,9").is_err());
+    }
 
     #[test]
     fn minutes_parser_accepts_only_sane_values() {

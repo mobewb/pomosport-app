@@ -2,7 +2,7 @@ use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 use std::time::Duration;
 
-pub const EXERCISES: [&str; 4] = ["10 push-ups", "20 squats", "10 crunches", "5 burpees"];
+pub const DEFAULT_EXERCISES: [&str; 4] = ["10 push-ups", "20 squats", "10 crunches", "5 burpees"];
 
 /// Longest time step applied in one tick, so a laptop sleep can't jump the timer.
 const MAX_DT: Duration = Duration::from_secs(1);
@@ -11,16 +11,18 @@ const MAX_DT: Duration = Duration::from_secs(1);
 pub struct Wheel {
     pub pos: usize,
     pub landed: bool,
+    len: usize,
     steps_done: u32,
     steps_total: u32,
     acc: Duration,
 }
 
 impl Wheel {
-    fn new(rng: &mut StdRng) -> Self {
+    fn new(rng: &mut StdRng, len: usize) -> Self {
         Self {
-            pos: rng.gen_range(0..EXERCISES.len()),
+            pos: rng.gen_range(0..len),
             landed: false,
+            len,
             steps_done: 0,
             steps_total: rng.gen_range(24..40),
             acc: Duration::ZERO,
@@ -37,7 +39,7 @@ impl Wheel {
                 break;
             }
             self.acc -= interval;
-            self.pos = (self.pos + 1) % EXERCISES.len();
+            self.pos = (self.pos + 1) % self.len;
             self.steps_done += 1;
             self.landed = self.steps_done >= self.steps_total;
         }
@@ -52,13 +54,14 @@ pub enum Phase {
     Break { long: bool },
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Config {
     pub work: Duration,
     pub short: Duration,
     pub long: Duration,
     /// Work sessions per cycle; the break after the last one is long.
     pub cycles: u32,
+    pub exercises: Vec<String>,
 }
 
 impl Default for Config {
@@ -68,6 +71,7 @@ impl Default for Config {
             short: Duration::from_secs(5 * 60),
             long: Duration::from_secs(15 * 60),
             cycles: 4,
+            exercises: DEFAULT_EXERCISES.map(String::from).to_vec(),
         }
     }
 }
@@ -94,7 +98,6 @@ impl App {
 
     pub fn with_seed(cfg: Config, seed: u64) -> Self {
         Self {
-            cfg,
             phase: Phase::Work,
             remaining: cfg.work,
             running: false,
@@ -104,6 +107,7 @@ impl App {
             clacks: 0,
             landed_event: false,
             rng: StdRng::seed_from_u64(seed),
+            cfg,
         }
     }
 
@@ -142,7 +146,7 @@ impl App {
 
     pub fn reset(&mut self) {
         let seed = self.rng.gen();
-        *self = Self::with_seed(self.cfg, seed);
+        *self = Self::with_seed(self.cfg.clone(), seed);
     }
 
     pub fn skip(&mut self) {
@@ -179,11 +183,11 @@ impl App {
     }
 
     /// The exercise the wheel landed on, once it has stopped.
-    pub fn result(&self) -> Option<&'static str> {
+    pub fn result(&self) -> Option<&str> {
         self.wheel
             .as_ref()
             .filter(|w| w.landed)
-            .map(|w| EXERCISES[w.pos])
+            .map(|w| self.cfg.exercises[w.pos].as_str())
     }
 
     /// Advance time; returns true when a work session just ended on its own.
@@ -213,7 +217,7 @@ impl App {
         self.phase = Phase::Wheel;
         self.running = false;
         self.remaining = Duration::ZERO;
-        self.wheel = Some(Wheel::new(&mut self.rng));
+        self.wheel = Some(Wheel::new(&mut self.rng, self.cfg.exercises.len()));
     }
 
     fn start_work(&mut self) {
@@ -378,11 +382,11 @@ mod tests {
                 a.tick(Duration::from_millis(50));
             }
             let w = a.wheel.as_ref().unwrap();
-            assert!(w.landed && w.pos < EXERCISES.len());
+            assert!(w.landed && w.pos < a.cfg.exercises.len());
             let pos = w.pos;
             adv(&mut a, 10 * S);
             assert_eq!(a.wheel.as_ref().unwrap().pos, pos, "stays put");
-            assert_eq!(a.result(), Some(EXERCISES[pos]));
+            assert_eq!(a.result(), Some(a.cfg.exercises[pos].as_str()));
         }
     }
 
@@ -401,7 +405,7 @@ mod tests {
             let w = a.wheel.as_ref().unwrap();
             assert!(w.landed);
             assert!((24..40).contains(&seen));
-            assert_eq!(w.pos, (start + seen as usize) % EXERCISES.len());
+            assert_eq!(w.pos, (start + seen as usize) % a.cfg.exercises.len());
             assert_eq!(a.take_clacks(), 0);
         }
     }
@@ -430,6 +434,21 @@ mod tests {
             fired += u32::from(a.take_wheel_landed());
         }
         assert_eq!(fired, 1);
+    }
+
+    #[test]
+    fn custom_exercises_drive_the_wheel() {
+        let mut a = App::with_seed(
+            Config {
+                exercises: vec!["only one".into()],
+                ..tcfg()
+            },
+            1,
+        );
+        a.toggle();
+        a.tick(S);
+        adv(&mut a, 60 * S);
+        assert_eq!(a.result(), Some("only one"));
     }
 
     #[test]
