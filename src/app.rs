@@ -136,8 +136,16 @@ impl App {
 
     /// Whether the next break will be the long one.
     pub fn next_break_long(&self) -> bool {
-        let sessions = self.completed + u32::from(self.phase == Phase::Work);
-        sessions.is_multiple_of(self.cfg.cycles)
+        match self.phase {
+            Phase::Work => self.long_break_after(self.completed + 1, true),
+            _ => self.long_break_after(self.completed, self.counts),
+        }
+    }
+
+    /// The one rule for long breaks, shared by the hint and the real break:
+    /// every `cycles`-th counted session, never after a skipped one.
+    fn long_break_after(&self, completed: u32, counts: bool) -> bool {
+        counts && completed > 0 && completed.is_multiple_of(self.cfg.cycles)
     }
 
     /// Total length of the current timed phase (0 during the wheel).
@@ -195,8 +203,7 @@ impl App {
     }
 
     fn start_break(&mut self) {
-        let long =
-            self.counts && self.completed > 0 && self.completed.is_multiple_of(self.cfg.cycles);
+        let long = self.long_break_after(self.completed, self.counts);
         self.phase = Phase::Break { long };
         self.remaining = if long { self.cfg.long } else { self.cfg.short };
         self.running = true;

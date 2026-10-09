@@ -98,7 +98,12 @@ fn skipped_session_never_earns_the_long_break() {
         adv(&mut a, 10 * S);
     }
     assert_eq!(a.completed, 4);
+    assert!(
+        !a.next_break_long(),
+        "work ahead: 5th session, not a multiple"
+    );
     a.skip();
+    assert!(!a.next_break_long(), "hint agrees with the real break");
     adv(&mut a, 60 * S);
     a.enter();
     assert_eq!(a.phase, Phase::Break { long: false });
@@ -220,4 +225,20 @@ fn reset_restores_initial_state() {
     assert_eq!(a.phase, Phase::Work);
     assert_eq!(a.completed, 0);
     assert!(!a.running);
+}
+
+#[test]
+fn hint_predicts_the_long_break_before_the_fourth_session_ends() {
+    let mut a = app();
+    for _ in 0..3 {
+        a.toggle();
+        adv(&mut a, 10 * S);
+        adv(&mut a, 60 * S);
+        a.enter();
+        adv(&mut a, 10 * S);
+    }
+    assert!(a.next_break_long(), "4th session ahead");
+    a.toggle();
+    adv(&mut a, 10 * S);
+    assert!(a.next_break_long(), "wheel after the 4th session");
 }
