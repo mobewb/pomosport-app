@@ -2,6 +2,11 @@
 name = "pomosport"
 version = "0.1.0"
 edition = "2021"
+description = "Pomodoro timer TUI with an exercise wheel for macOS"
+license = "MIT"
+repository = "https://github.com/mobewb/pomosport-app"
+readme = "README.md"
+rust-version = "1.96"
 
 [dependencies]
 ratatui = "0.29"
