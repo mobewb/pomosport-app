@@ -103,6 +103,7 @@ pub fn win(playing: &mut Option<Child>) {
 mod tests {
     use super::*;
 
+    // Inline: exercises the private `write_asset`.
     #[test]
     fn asset_file_is_written_once_and_reused() {
         let name = format!("test-{}.bin", std::process::id());
