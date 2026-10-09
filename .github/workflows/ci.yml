@@ -16,4 +16,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: rustup component add rustfmt clippy
       - run: prek run --all-files
-      - run: cargo test
+      - name: Unit tests (src/)
+        run: cargo test --lib --bins
+      - name: Integration tests (tests/)
+        run: cargo test --test '*'
