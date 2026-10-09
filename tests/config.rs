@@ -55,3 +55,32 @@ fn load_reads_temp_file_and_handles_missing_and_bad() {
     assert!(load(&bad).is_err(), "unknown keys are errors");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn cli_can_override_file_booleans_both_ways() {
+    let f = || file("mute = true\nauto_start = true\nno_notify = true");
+    let s = resolve(cli(&[]), f()).unwrap();
+    assert!(s.mute && s.no_notify && s.config.auto_start, "file applies");
+    let s = resolve(cli(&["--no-mute", "--no-auto-start", "--notify"]), f()).unwrap();
+    assert!(
+        !s.mute && !s.no_notify && !s.config.auto_start,
+        "cli turns off"
+    );
+    let s = resolve(
+        cli(&["--mute", "--auto-start", "--no-notify"]),
+        file("mute = false\nauto_start = false\nno_notify = false"),
+    )
+    .unwrap();
+    assert!(s.mute && s.no_notify && s.config.auto_start, "cli turns on");
+}
+
+#[test]
+fn contradictory_flags_are_rejected() {
+    for pair in [
+        ["--mute", "--no-mute"],
+        ["--auto-start", "--no-auto-start"],
+        ["--no-notify", "--notify"],
+    ] {
+        assert!(Cli::try_parse_from(["pomosport", pair[0], pair[1]]).is_err());
+    }
+}

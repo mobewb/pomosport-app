@@ -27,14 +27,23 @@ pub struct Cli {
     #[arg(long, value_parser = parse_exercises)]
     exercises: Option<Vec<String>>,
     /// Start timers without pressing Space
-    #[arg(long)]
+    #[arg(long, conflicts_with = "no_auto_start")]
     auto_start: bool,
+    /// Wait for Space to start timers (overrides the config file)
+    #[arg(long)]
+    no_auto_start: bool,
     /// Disable all sounds (clacks, fanfare, bell)
-    #[arg(long)]
+    #[arg(long, conflicts_with = "no_mute")]
     mute: bool,
-    /// Disable desktop notifications
+    /// Enable sounds (overrides the config file)
     #[arg(long)]
+    no_mute: bool,
+    /// Disable desktop notifications
+    #[arg(long, conflicts_with = "notify")]
     no_notify: bool,
+    /// Enable desktop notifications (overrides the config file)
+    #[arg(long)]
+    notify: bool,
 }
 
 #[derive(clap::Subcommand)]
@@ -112,6 +121,17 @@ fn minutes(m: f64) -> Result<Duration, String> {
     check_minutes(m).map(|m| Duration::from_secs_f64(m * 60.0))
 }
 
+/// An explicit command-line choice wins either way; otherwise the file decides.
+fn flag(on: bool, off: bool, file: Option<bool>) -> bool {
+    if on {
+        true
+    } else if off {
+        false
+    } else {
+        file.unwrap_or(false)
+    }
+}
+
 /// Merge: command line, then file, then built-in defaults.
 pub fn resolve(cli: Cli, file: FileConfig) -> Result<Settings, String> {
     let d = Config::default();
@@ -134,9 +154,9 @@ pub fn resolve(cli: Cli, file: FileConfig) -> Result<Settings, String> {
             long: dur(cli.long, file.long, d.long)?,
             cycles,
             exercises,
-            auto_start: cli.auto_start || file.auto_start.unwrap_or(false),
+            auto_start: flag(cli.auto_start, cli.no_auto_start, file.auto_start),
         },
-        mute: cli.mute || file.mute.unwrap_or(false),
-        no_notify: cli.no_notify || file.no_notify.unwrap_or(false),
+        mute: flag(cli.mute, cli.no_mute, file.mute),
+        no_notify: flag(cli.no_notify, cli.notify, file.no_notify),
     })
 }
