@@ -56,11 +56,14 @@ const ICON: &[u8] = include_bytes!("../assets/icon.png");
 const WIN_SOUND: &[u8] = include_bytes!("../assets/win.wav");
 const MESSAGE: &str = "Time for an exercise!";
 
-/// Write an embedded asset to a per-process file in the temp dir so external
-/// tools (terminal-notifier, afplay) can read it.
+/// Write an embedded asset to a stable file in the temp dir so external tools
+/// (terminal-notifier, afplay) can read it. Reused across runs when unchanged.
 fn write_asset(name: &str, bytes: &[u8]) -> Option<PathBuf> {
-    let path = std::env::temp_dir().join(format!("pomosport-{}-{name}", std::process::id()));
-    std::fs::write(&path, bytes).ok()?;
+    let path = std::env::temp_dir().join(format!("pomosport-{}-{name}", env!("CARGO_PKG_VERSION")));
+    let fresh = std::fs::metadata(&path).is_ok_and(|m| m.len() == bytes.len() as u64);
+    if !fresh {
+        std::fs::write(&path, bytes).ok()?;
+    }
     Some(path)
 }
 
